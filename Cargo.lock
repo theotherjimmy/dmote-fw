@@ -138,6 +138,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "dmote-fw"
+version = "0.1.0"
+dependencies = [
+ "cortex-m 0.7.2",
+ "cortex-m-rt",
+ "cortex-m-rtic",
+ "embedded-hal",
+ "generic-array 0.14.4",
+ "keyberon",
+ "panic-halt",
+ "stm32f1xx-hal",
+ "usb-device",
+]
+
+[[package]]
 name = "either"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -249,21 +264,6 @@ dependencies = [
  "generic-array 0.14.4",
  "heapless 0.5.6",
  "layout-macro",
- "usb-device",
-]
-
-[[package]]
-name = "keyboard"
-version = "0.1.0"
-dependencies = [
- "cortex-m 0.7.2",
- "cortex-m-rt",
- "cortex-m-rtic",
- "embedded-hal",
- "generic-array 0.14.4",
- "keyberon",
- "panic-halt",
- "stm32f1xx-hal",
  "usb-device",
 ]
 

@@ -54,7 +54,7 @@ fn parse_row(input: TokenStream) -> TokenStream {
         match t {
             TokenTree::Ident(i) => match i.to_string().as_str() {
                 "n" => out.extend(quote! { keyberon::action::Action::NoOp, }),
-                "t" => out.extend(quote! { keyberon::action::Action::Trans, }),
+                "t" | "_" => out.extend(quote! { keyberon::action::Action::Trans, }),
                 _ => out.extend(quote! {
                     keyberon::action::Action::KeyCode(keyberon::key_code::KeyCode::#i),
                 }),

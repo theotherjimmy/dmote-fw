@@ -1,5 +1,5 @@
 build-dir := "target/thumbv7m-none-eabi/"
-fw-name := "/keyboard"
+fw-name := "/dmote-fw"
 
 
 # Hidden because it's not meant to be run from the command line

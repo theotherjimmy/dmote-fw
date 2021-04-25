@@ -3,7 +3,7 @@
 
 use core::convert::Infallible;
 use embedded_hal::digital::v2::{InputPin, OutputPin};
-use generic_array::typenum::U6;
+use generic_array::typenum::{U6, U3};
 use keyberon::debounce::Debouncer;
 use keyberon::impl_heterogenous_array;
 use keyberon::key_code::{KbHidReport, KeyCode};
@@ -12,8 +12,8 @@ use keyberon::matrix::{Matrix, PressedKeys};
 use panic_halt as _;
 use rtic::app;
 use stm32f1xx_hal::gpio::{
-    gpioa::{PA0, PA1, PA2, PA3, PA4, PA5},
-    gpiob::{PB3, PB4, PB5, PB6, PB7, PB8},
+    gpioa::{PA0, PA1, PA2, PA3, PA4, PA5, PA8, PA9, PA10},
+    gpiob::{PB3, PB4, PB5, PB6, PB7, PB8, PB12, PB13, PB14},
     Input, Output, PullUp, PushPull,
 };
 use stm32f1xx_hal::prelude::*;
@@ -26,7 +26,7 @@ use usb_device::class::UsbClass as _;
 type UsbClass = keyberon::Class<'static, UsbBusType, ()>;
 type UsbDevice = usb_device::device::UsbDevice<'static, UsbBusType>;
 
-pub struct Cols(
+pub struct FCols(
     pub PB3<Input<PullUp>>,
     pub PB4<Input<PullUp>>,
     pub PB5<Input<PullUp>>,
@@ -36,13 +36,13 @@ pub struct Cols(
 );
 
 impl_heterogenous_array! {
-    Cols,
+    FCols,
     dyn InputPin<Error = Infallible>,
     U6,
     [0, 1, 2, 3, 4, 5]
 }
 
-pub struct Rows(
+pub struct FRows(
     pub PA0<Output<PushPull>>,
     pub PA1<Output<PushPull>>,
     pub PA2<Output<PushPull>>,
@@ -51,30 +51,91 @@ pub struct Rows(
     pub PA5<Output<PushPull>>,
 );
 impl_heterogenous_array! {
-    Rows,
+    FRows,
     dyn OutputPin<Error = Infallible>,
     U6,
     [0, 1, 2, 3, 4, 5]
 }
 
+pub struct TCols(
+    pub PA8<Input<PullUp>>,
+    pub PA9<Input<PullUp>>,
+    pub PA10<Input<PullUp>>,
+);
+
+impl_heterogenous_array! {
+    TCols,
+    dyn InputPin<Error = Infallible>,
+    U3,
+    [2, 1, 0]
+}
+
+pub struct TRows(
+    pub PB12<Output<PushPull>>,
+    pub PB13<Output<PushPull>>,
+    pub PB14<Output<PushPull>>,
+);
+impl_heterogenous_array! {
+    TRows,
+    dyn OutputPin<Error = Infallible>,
+    U3,
+    [0, 1, 2]
+}
+/*
+ * Ideal shape:
+
+                2    3    4    5           6     7    8    9
+    =      1    W    E    R    T           H     N    E    I    0   '-'
+    Tab    Q    R    S    T    D           H     N    E    I    ';' BSLS
+    Escape A    X    C    V    B           K     M    ','  '.'  O   QUOT
+    LShift Z    Home Pgup End              Left  Up   Rght '\'  '`'
+                     Pgdn                        Down
+
+                          Lshift EQL         VolD VolU
+                     Lgui HAEN Entr        MUTE  PNX  (3)
+                          Lapo Space       Esc  RAPC
+ */
+
 #[rustfmt::skip]
 pub static LEFT_FINGERS: keyberon::layout::Layers<()> = keyberon::layout::layout!{{
-    [n      n     2     3     4     5]
-    [=      1     W     E     R     T]
-    [Tab    Q     S     D     F     G]
-    [Escape A     X     C     V     B]
-    [LShift Z     ~     Down  Up    n]
-    [n      n     n     '`'   n     n]
+    [_      _     2     3      4      5]
+    [=      1     W     E      R      T]
+    [Tab    Q     S     D      F      G]
+    [Escape A     X     C      V      B]
+    [LShift Z     ~     Down   Up     _]
+    [_      _     _     '`'    _      _]
 }};
+
+#[rustfmt::skip]
+pub static LEFT_THUMB: keyberon::layout::Layers<()> = keyberon::layout::layout!{{
+                       [_      LShift LCtrl]
+                       [Escape Space  LAlt]
+                       [Pause  PgDown PgUp]
+}};
+
+pub struct Matricies {
+    fingers: Matrix<FCols, FRows>,
+    thumb: Matrix<TCols, TRows>,
+}
+
+pub struct Layouts {
+    fingers: Layout<()>,
+    thumb: Layout<()>,
+}
+
+pub struct Debouncers {
+    fingers: Debouncer<PressedKeys<U6, U6>>,
+    thumb: Debouncer<PressedKeys<U3, U3>>,
+}
 
 #[app(device = stm32f1xx_hal::pac, peripherals = true)]
 const APP: () = {
     struct Resources {
         usb_dev: UsbDevice,
         usb_class: UsbClass,
-        matrix: Matrix<Cols, Rows>,
-        debouncer: Debouncer<PressedKeys<U6, U6>>,
-        layout: Layout<()>,
+        matrix: Matricies,
+        debouncer: Debouncers,
+        layout: Layouts,
         timer: timer::CountDownTimer<pac::TIM3>,
     }
 
@@ -104,7 +165,7 @@ const APP: () = {
         // fails
         match usb_dp.set_low() {
             Ok(_) => (),
-            Err(_) => panic!()
+            Err(_) => panic!(),
         };
         cortex_m::asm::delay(clocks.sysclk().0 / 100);
 
@@ -122,7 +183,7 @@ const APP: () = {
         // fails
         let usb_bus = match USB_BUS.as_ref() {
             Some(ub) => ub,
-            None => panic!()
+            None => panic!(),
         };
 
         let usb_class = keyberon::new_class(usb_bus, ());
@@ -133,7 +194,7 @@ const APP: () = {
         timer.listen(timer::Event::Update);
 
         #[rustfmt::skip]
-        let cols = Cols(
+        let fcols = FCols(
                   pb3.into_pull_up_input(&mut gpiob.crl),
                   pb4.into_pull_up_input(&mut gpiob.crl),
             gpiob.pb5.into_pull_up_input(&mut gpiob.crl),
@@ -141,7 +202,7 @@ const APP: () = {
             gpiob.pb7.into_pull_up_input(&mut gpiob.crl),
             gpiob.pb8.into_pull_up_input(&mut gpiob.crh),
         );
-        let rows = Rows(
+        let frows = FRows(
             gpioa.pa0.into_push_pull_output(&mut gpioa.crl),
             gpioa.pa1.into_push_pull_output(&mut gpioa.crl),
             gpioa.pa2.into_push_pull_output(&mut gpioa.crl),
@@ -149,18 +210,40 @@ const APP: () = {
             gpioa.pa4.into_push_pull_output(&mut gpioa.crl),
             gpioa.pa5.into_push_pull_output(&mut gpioa.crl),
         );
-        let matrix = match Matrix::new(cols, rows){
+        let fingers = match Matrix::new(fcols, frows) {
             Ok(m) => m,
-            Err(_) => panic!()
+            Err(_) => panic!(),
         };
+
+        let tcols = TCols(
+            gpioa.pa8.into_pull_up_input(&mut gpioa.crh),
+            gpioa.pa9.into_pull_up_input(&mut gpioa.crh),
+            gpioa.pa10.into_pull_up_input(&mut gpioa.crh),
+        );
+        let trows = TRows(
+            gpiob.pb12.into_push_pull_output(&mut gpiob.crh),
+            gpiob.pb13.into_push_pull_output(&mut gpiob.crh),
+            gpiob.pb14.into_push_pull_output(&mut gpiob.crh),
+        );
+        let thumb = match Matrix::new(tcols, trows) {
+            Ok(m) => m,
+            Err(_) => panic!(),
+        };
+        let matrix = Matricies {fingers, thumb};
 
         init::LateResources {
             usb_dev,
             usb_class,
             timer,
-            debouncer: Debouncer::new(PressedKeys::default(), PressedKeys::default(), 5),
-            matrix: matrix,
-            layout: Layout::new(LEFT_FINGERS),
+            debouncer: Debouncers{
+                fingers: Debouncer::new(PressedKeys::default(), PressedKeys::default(), 5),
+                thumb: Debouncer::new(PressedKeys::default(), PressedKeys::default(), 5),
+            },
+            matrix,
+            layout: Layouts {
+                fingers: Layout::new(LEFT_FINGERS),
+                thumb: Layout::new(LEFT_THUMB),
+            }
         }
     }
 
@@ -177,16 +260,29 @@ const APP: () = {
     #[task(binds = TIM3, priority = 1, resources = [usb_class, matrix, debouncer, layout, timer])]
     fn tick(mut c: tick::Context) {
         c.resources.timer.clear_update_interrupt_flag();
-        let matrix_res = match c.resources.matrix.get() {
+        let events = match c.resources.matrix.fingers.get() {
             Ok(r) => r,
-            Err(_) => panic!()
+            Err(_) => panic!(),
         };
 
-        for event in c.resources.debouncer.events(matrix_res) {
-            c.resources.layout.event(event);
+        for event in c.resources.debouncer.fingers.events(events) {
+            c.resources.layout.fingers.event(event);
         }
-        c.resources.layout.tick();
-        send_report(c.resources.layout.keycodes(), &mut c.resources.usb_class);
+        c.resources.layout.fingers.tick();
+
+        let events = match c.resources.matrix.thumb.get() {
+            Ok(r) => r,
+            Err(_) => panic!(),
+        };
+
+        for event in c.resources.debouncer.thumb.events(events) {
+            c.resources.layout.thumb.event(event);
+        }
+        c.resources.layout.thumb.tick();
+        send_report(
+            (c.resources.layout.thumb.keycodes()).chain(c.resources.layout.fingers.keycodes()),
+            &mut c.resources.usb_class
+        );
     }
 };
 

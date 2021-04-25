@@ -117,7 +117,6 @@ impl<'a, U, V> IntoIterator for &'a PressedKeys<U, V>
 where
     V: ArrayLength<bool>,
     U: ArrayLength<GenericArray<bool, V>>,
-    U: ArrayLength<&'a GenericArray<bool, V>>,
 {
     type IntoIter = core::slice::Iter<'a, GenericArray<bool, V>>;
     type Item = &'a GenericArray<bool, V>;
