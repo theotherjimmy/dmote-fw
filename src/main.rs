@@ -81,6 +81,12 @@ pub fn usb_poll(usb_dev: &mut UsbDevice, keyboard: &mut UsbClass) {
  * buffer is safe to read. In particular, when the half-complete interrupt status bit
  * is set, use buffer 0, and when it's clear, indicating that the interrupt was
  * generated with the DMA transfer complete interrupt, buffer 1 should be used.
+ *
+ * # Panics
+ *
+ * This function is intended as initialization, and so will panic if called more than
+ * once. However, as this takes ownership of the DMA1 and TIM1 structs without returning
+ * them, it should not be possible to call this more than once.
  */
 // TODO: better return type? Perhaps it would be better to accept DMA1CH2 and DMA1CH5
 // and return DMA1CH5's interrupt status register?
