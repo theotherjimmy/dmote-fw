@@ -22,6 +22,7 @@ use stm32f1xx_hal::{dma, pac};
 use usb_device::bus::UsbBusAllocator;
 use usb_device::class::UsbClass as _;
 
+/// Compute the Auto Reload Register and Prescaller Register values for a timer
 #[inline(always)]
 fn compute_arr_presc(freq: u32, clock: u32) -> (u16, u16) {
     let ticks = clock / freq;
@@ -31,9 +32,12 @@ fn compute_arr_presc(freq: u32, clock: u32) -> (u16, u16) {
 }
 
 // NOTE: () is used in place of LEDs, as we don't care about them right now
+/// Type alias for a keyboard with no LEDs.
 type UsbClass = keyberon::Class<'static, UsbBusType, ()>;
+/// Type alias for usb devices.
 type UsbDevice = usb_device::device::UsbDevice<'static, UsbBusType>;
 
+/// Poll usb device. Called from within USB rx and tx interrupts
 pub fn usb_poll(usb_dev: &mut UsbDevice, keyboard: &mut UsbClass) {
     if usb_dev.poll(&mut [keyboard]) {
         keyboard.poll();
@@ -98,6 +102,15 @@ pub fn dma_key_scan(
     apb2: &mut APB2,
     clocks: &Clocks,
 ) -> (dma::dma1::Channels, &'static [[u8; 6]; 2]) {
+    #[rustfmt::skip]
+    const SCANIN: [u16; 6] = [
+        0b000001000,
+        0b000010000,
+        0b000100000,
+        0b001000000,
+        0b010000000,
+        0b100000000
+    ];
     let mut dma = dma.split(ahb);
     let scanout = singleton!(: [[u8; 6]; 2] = [[0; 6]; 2]).unwrap();
 
@@ -223,34 +236,49 @@ pub fn dma_key_scan(
     (dma, &*scanout)
 }
 
+/// Columns of the keyboard matrix
+///
+/// Pin| Left Half wiring                    | Right half wiring
+/// ---|-----------------------------------|-----------------------------------
+/// PB3| Pinky col - 1                     | Pointer col + 1 & Thumb col +1
+/// PB4| Pinky home col                    | Ponter Home col & Thumb Home col
+/// PB5| Ring home col                     | Middle Home col & Thumb col -1
+/// PB6| Middle Home col & Thumb col -1    | Ring Home col
+/// PB7| Pointer Home col & Thumb Home col | Pinky Home col
+/// PB8| Pointer col + 1 & Thumb col + 1   | Pinky col - 1
 pub struct Cols(
-    // Left Half meaning                   | Right half Meaning
-    //-------------------------------------+-----------------------------------
-    // Pinky col - 1                       | Pointer col + 1 and Thumb col +1
     pub PB3<Output<PushPull>>,
-    // Pinky home col                      | Ponter Home col and Thumb Home col
     pub PB4<Output<PushPull>>,
-    // Ring home col                       | Middle Home col and Thumb col -1
     pub PB5<Output<PushPull>>,
-    // Middle Home col and Thumb col -1    | Ring Home col
     pub PB6<Output<PushPull>>,
-    // Pointer Home col and Thumb Home col | Pinky Home col
     pub PB7<Output<PushPull>>,
-    // Pointer col + 1 and Thumb col + 1   | Pinky col - 1
     pub PB8<Output<PushPull>>,
 );
 
+/// Rows of the keyboard matrix
+///
+/// Pin | Wiring for both halfs
+/// ----|----------------------------------
+/// PA0 | Home Row + 2
+/// PA1 | Home Row + 1
+/// PA2 | Home Row
+/// PA3 | Home Row - 1
+/// PA4 | Howe Row - 2
+/// PA5 | Home Row - 3 & Thumb Home Row + 1
+/// PA6 | Thumb Home Row
+/// PA7 | Thumb Home Row - 1
 pub struct Rows(
-    pub PA0<Input<PullDown>>, // Home Row + 2
-    pub PA1<Input<PullDown>>, // Home Row + 1
-    pub PA2<Input<PullDown>>, // Home Row
-    pub PA3<Input<PullDown>>, // Home Row - 1
-    pub PA4<Input<PullDown>>, // Howe Row - 2
-    pub PA5<Input<PullDown>>, // Home Row - 3 and Thumb Home Row + 1
-    pub PA6<Input<PullDown>>, // Thumb Home Row
-    pub PA7<Input<PullDown>>, // Thumb Home Row - 1
+    pub PA0<Input<PullDown>>,
+    pub PA1<Input<PullDown>>,
+    pub PA2<Input<PullDown>>,
+    pub PA3<Input<PullDown>>,
+    pub PA4<Input<PullDown>>,
+    pub PA5<Input<PullDown>>,
+    pub PA6<Input<PullDown>>,
+    pub PA7<Input<PullDown>>,
 );
 
+/// Mapping from switch positions to keys symbols; 'a', '1', '$', etc.
 #[rustfmt::skip]
 pub static LAYOUT: keyberon::layout::Layers<()> = keyberon::layout::layout!{{
     [_      _     2     3      4      5    ]
@@ -264,15 +292,6 @@ pub static LAYOUT: keyberon::layout::Layers<()> = keyberon::layout::layout!{{
     [_      _     _     Pause  Home   End  ]
 }};
 
-#[rustfmt::skip]
-const SCANIN: [u16; 6] = [
-    0b000001000,
-    0b000010000,
-    0b000100000,
-    0b001000000,
-    0b010000000,
-    0b100000000
-];
 
 #[app(device = stm32f1xx_hal::pac, peripherals = true)]
 mod app {
