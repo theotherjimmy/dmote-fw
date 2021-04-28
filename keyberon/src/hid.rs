@@ -106,7 +106,9 @@ impl<B: UsbBus, D: HidDevice> HidClass<'_, B, D> {
         HidClass {
             device,
             interface: alloc.interface(),
-            endpoint_interrupt_in: alloc.interrupt(8, 10),
+            // NOTE: we want the interval to be as small as possible to
+            // enable the lowest latency possible
+            endpoint_interrupt_in: alloc.interrupt(8, 1),
             expect_interrupt_in_complete: false,
         }
     }

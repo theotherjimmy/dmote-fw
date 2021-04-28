@@ -21,6 +21,7 @@ flash profile: (build profile)
     target extended-remote | just _openocd-pipe
     monitor reset
     load
+    monitor reset run
 
 build profile:
     cargo build -Z unstable-options --profile {{profile}}
