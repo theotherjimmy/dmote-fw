@@ -1,5 +1,6 @@
 #![no_main]
 #![no_std]
+use cortex_m::singleton;
 use generic_array::typenum::{U6, U8};
 use keyberon::debounce::Debouncer;
 use keyberon::key_code::KbHidReport;
@@ -90,8 +91,9 @@ pub fn dma_key_scan(
     ahb: &mut AHB,
     apb2: &mut APB2,
     clocks: &Clocks,
-) -> dma::dma1::Channels {
+) -> (dma::dma1::Channels, &'static [[u8; 6]; 2]) {
     let mut dma = dma.split(ahb);
+    let scanout = singleton!(: [[u8; 6]; 2] = [[0; 6]; 2]).unwrap();
 
     // Implementation Notes:
     //
@@ -149,11 +151,11 @@ pub fn dma_key_scan(
     // Safety: we set the transfer length correctly, and we only read the half of the
     // buffer that's not in use by DMA.
     dma.5
-        .set_memory_address(unsafe { SCANOUT.as_mut_ptr() } as *mut u16 as u32, true);
+        .set_memory_address(scanout.as_mut_ptr() as *mut u8 as u32, true);
     // NOTE: This is the number of elements.
     dma.5.set_transfer_length(
-        core::mem::size_of_val(unsafe { &SCANOUT })
-            / core::mem::size_of_val(unsafe { &SCANOUT[0][0] }),
+        core::mem::size_of_val(scanout)
+            / core::mem::size_of_val(&scanout[0][0]),
     );
     #[rustfmt::skip]
     dma.5.ch().cr.modify(|_read, write| {
@@ -212,7 +214,7 @@ pub fn dma_key_scan(
     // start counter
     tim1.cr1.modify(|_, w| w.cen().set_bit());
 
-    dma
+    (dma, &*scanout)
 }
 
 pub struct Cols(
@@ -266,8 +268,6 @@ const SCANIN: [u16; 6] = [
     0b100000000
 ];
 
-pub(crate) static mut SCANOUT: [[u8; 6]; 2] = [[0; 6]; 2];
-
 #[app(device = stm32f1xx_hal::pac, peripherals = true)]
 mod app {
     use super::*;
@@ -280,6 +280,7 @@ mod app {
         debouncer: Debouncer<PressedKeys<U8, U6>>,
         layout: Layout<()>,
         dma: dma::dma1::Channels,
+        scanout: &'static [[u8; 6]; 2],
     }
 
     #[init]
@@ -353,7 +354,7 @@ mod app {
             gpioa.pa7.into_pull_down_input(&mut gpioa.crl),
         );
 
-        let dma = dma_key_scan(
+        let (dma, scanout) = dma_key_scan(
             (5 * 6).khz(),
             c.device.DMA1,
             c.device.TIM1,
@@ -367,6 +368,7 @@ mod app {
                 usb_dev,
                 usb_class,
                 dma,
+                scanout,
                 debouncer,
                 layout,
             },
@@ -392,13 +394,14 @@ mod app {
         (usb_dev, usb_class).lock(|dev, class| usb_poll(dev, class));
     }
 
-    #[task(binds = DMA1_CHANNEL5, priority = 1, resources = [usb_class, debouncer, layout, &dma])]
+    #[task(binds = DMA1_CHANNEL5, priority = 1, resources = [usb_class, debouncer, layout, &dma, &scanout])]
     fn tick(mut c: tick::Context) {
         let tick::Resources {
             ref mut usb_class,
             ref mut debouncer,
             ref mut layout,
             dma,
+            scanout,
         } = c.resources;
         let half = dma.5.isr().htif4().bits();
         // Clear all pending interrupts, irrespective of type
@@ -407,7 +410,7 @@ mod app {
         let mut events: PressedKeys<U8, U6> = PressedKeys::default();
 
         for i in 0..6 {
-            let row: u8 = unsafe { SCANOUT[if half { 0 } else { 1 }][i] };
+            let row: u8 = scanout[if half { 0 } else { 1 }][i];
             for bit in 0..=7 {
                 if row & (1 << bit) != 0 {
                     events.0.as_mut_slice()[bit].as_mut_slice()[i] = true;
