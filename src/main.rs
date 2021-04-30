@@ -313,6 +313,11 @@ pub static LAYOUT: keyberon::layout::Layers = keyberon::layout::layout!{{
     [PgUp   PgDown PScreen _      _      _     ]
 }};
 
+/// Resources to build a keyboard
+pub struct Keyboard {
+    pub layout: Layout,
+    pub debouncer: Debouncer<PressedKeys<U8, U6>>,
+}
 
 #[app(device = stm32f1xx_hal::pac, peripherals = true)]
 mod app {
@@ -323,8 +328,7 @@ mod app {
     struct Resources {
         usb_dev: UsbDevice,
         usb_class: UsbClass,
-        debouncer: Debouncer<PressedKeys<U8, U6>>,
-        layout: Layout,
+        keyboard: Keyboard,
         dma: dma::dma1::Channels,
         scanout: &'static [[u8; 6]; 2],
     }
@@ -335,7 +339,7 @@ mod app {
 
         let mut flash = c.device.FLASH.constrain();
         let mut rcc = c.device.RCC.constrain();
-        let debouncer = Debouncer::new(PressedKeys::default(), PressedKeys::default(), 5);
+        let debouncer = Debouncer::new(PressedKeys::default(), PressedKeys::default(), 25);
         let layout = Layout::new(LAYOUT);
 
         let clocks = rcc
@@ -416,8 +420,10 @@ mod app {
                 usb_class,
                 dma,
                 scanout,
-                debouncer,
-                layout,
+                keyboard: Keyboard{
+                    debouncer,
+                    layout,
+                }
             },
             init::Monotonics(),
         )
@@ -441,12 +447,13 @@ mod app {
         (usb_dev, usb_class).lock(|dev, class| usb_poll(dev, class));
     }
 
-    #[task(binds = DMA1_CHANNEL5, priority = 1, resources = [usb_class, debouncer, layout, &dma, &scanout])]
+    #[task(binds = DMA1_CHANNEL5, priority = 1, resources = [
+        usb_class, keyboard, &dma, &scanout
+    ])]
     fn tick(mut c: tick::Context) {
         let tick::Resources {
             ref mut usb_class,
-            ref mut debouncer,
-            ref mut layout,
+            ref mut keyboard,
             dma,
             scanout,
         } = c.resources;
@@ -465,11 +472,11 @@ mod app {
             }
         }
 
-        let report: KbHidReport = (layout, debouncer).lock(|l, d| {
-            for event in d.events(events) {
-                l.event(event);
+        let report: KbHidReport = keyboard.lock(|Keyboard{ layout, debouncer }|{
+            for event in debouncer.events(events) {
+                layout.event(event);
             }
-            l.keycodes().collect()
+            layout.keycodes().collect()
         });
 
         if usb_class.lock(|k| k.device_mut().set_keyboard_report(report.clone())) {
