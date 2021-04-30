@@ -236,60 +236,31 @@ pub fn dma_key_scan(
     (dma, &*scanout)
 }
 
-/// Columns of the keyboard matrix
-///
-/// Pin| Left Half wiring                    | Right half wiring
-/// ---|-----------------------------------|-----------------------------------
-/// PB3| Pinky col - 1                     | Pointer col + 1 & Thumb col +1
-/// PB4| Pinky home col                    | Ponter Home col & Thumb Home col
-/// PB5| Ring home col                     | Middle Home col & Thumb col -1
-/// PB6| Middle Home col & Thumb col -1    | Ring Home col
-/// PB7| Pointer Home col & Thumb Home col | Pinky Home col
-/// PB8| Pointer col + 1 & Thumb col + 1   | Pinky col - 1
-pub struct Cols(
-    pub PB3<Output<PushPull>>,
-    pub PB4<Output<PushPull>>,
-    pub PB5<Output<PushPull>>,
-    pub PB6<Output<PushPull>>,
-    pub PB7<Output<PushPull>>,
-    pub PB8<Output<PushPull>>,
-);
-
-/// Rows of the keyboard matrix
-///
-/// Pin | Wiring for both halfs
-/// ----|----------------------------------
-/// PA0 | Home Row + 2
-/// PA1 | Home Row + 1
-/// PA2 | Home Row
-/// PA3 | Home Row - 1
-/// PA4 | Howe Row - 2
-/// PA5 | Home Row - 3 & Thumb Home Row + 1
-/// PA6 | Thumb Home Row
-/// PA7 | Thumb Home Row - 1
-pub struct Rows(
-    pub PA0<Input<PullDown>>,
-    pub PA1<Input<PullDown>>,
-    pub PA2<Input<PullDown>>,
-    pub PA3<Input<PullDown>>,
-    pub PA4<Input<PullDown>>,
-    pub PA5<Input<PullDown>>,
-    pub PA6<Input<PullDown>>,
-    pub PA7<Input<PullDown>>,
-);
-
 /// Mapping from switch positions to keys symbols; 'a', '1', '$', etc.
+#[cfg(feature = "left")]
 #[rustfmt::skip]
-pub static LAYOUT: keyberon::layout::Layers<()> = keyberon::layout::layout!{{
-    [_      _     2     3      4      5    ]
-    [=      1     W     E      R      T    ]
-    [Tab    Q     S     D      F      G    ]
-    [Escape A     X     C      V      B    ]
-    [LShift Z     ~     Left   Right  _    ]
-    [_      _     _     '`'
-                               LShift LCtrl]
-    [_      _     _     Escape Space  LAlt ]
-    [_      _     _     Pause  Home   End  ]
+pub static LAYOUT: keyberon::layout::Layers = keyberon::layout::layout!{{
+    [_      _      2       3      4      5    ]
+    [=      1      W       E      R      T    ]
+    [Tab    Q      S       D      F      G    ]
+    [Escape A      X       C      V      B    ]
+    [LShift Z  NonUsBslash Left   Right  _    ]
+    [_      _      _       '`'    LShift LCtrl]
+    [_      _      _       Escape Space  LAlt ]
+    [_      _      _       Pause  End    Home ]
+}};
+
+#[cfg(feature = "right")]
+#[rustfmt::skip]
+pub static LAYOUT: keyberon::layout::Layers = keyberon::layout::layout!{{
+    [6      7      8       9      _      _     ]
+    [Y      U      I       O      0      -     ]
+    [H      J      K       L      P      '\\'  ]
+    [N      M      ,       .      ;      Quote ]
+    [_      Up     Down    '['    /      RShift]
+    [RCtrl  BSpace ']'     _      _      _     ]
+    [RAlt   Enter  Escape  _      _      _     ]
+    [PgUp   PgDown PScreen _      _      _     ]
 }};
 
 
@@ -303,7 +274,7 @@ mod app {
         usb_dev: UsbDevice,
         usb_class: UsbClass,
         debouncer: Debouncer<PressedKeys<U8, U6>>,
-        layout: Layout<()>,
+        layout: Layout,
         dma: dma::dma1::Channels,
         scanout: &'static [[u8; 6]; 2],
     }
@@ -447,7 +418,6 @@ mod app {
             for event in d.events(events) {
                 l.event(event);
             }
-            l.tick();
             l.keycodes().collect()
         });
 

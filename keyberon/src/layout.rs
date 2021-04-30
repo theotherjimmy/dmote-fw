@@ -58,19 +58,16 @@ use State::*;
 /// The first level correspond to the layer, the two others to the
 /// switch matrix.  For example, `layers[1][2][3]` correspond to the
 /// key i=2, j=3 on the layer 1.
-pub type Layers<T = core::convert::Infallible> = &'static [&'static [&'static [Action<T>]]];
+pub type Layers = &'static [&'static [&'static [Action]]];
 
 type Stack = ArrayDeque<[Stacked; 16], arraydeque::behavior::Wrapping>;
 
 /// The layout manager. It takes `Event`s and `tick`s as input, and
 /// generate keyboard reports.
-pub struct Layout<T = core::convert::Infallible>
-where
-    T: 'static,
-{
-    layers: Layers<T>,
+pub struct Layout {
+    layers: Layers,
     default_layer: usize,
-    states: Vec<State<T>, U64>,
+    states: Vec<State, U64>,
     stacked: Stack,
 }
 
@@ -132,49 +129,12 @@ impl Event {
     }
 }
 
-/// Event from custom action.
-#[derive(Debug, PartialEq, Eq)]
-pub enum CustomEvent<T: 'static> {
-    /// No custom action.
-    NoEvent,
-    /// The given custom action key is pressed.
-    Press(&'static T),
-    /// The given custom action key is released.
-    Release(&'static T),
-}
-impl<T> CustomEvent<T> {
-    /// Update an event according to a new event.
-    ///
-    ///The event can only be modified in the order `NoEvent < Press <
-    /// Release`
-    fn update(&mut self, e: Self) {
-        use CustomEvent::*;
-        match (&e, &self) {
-            (Release(_), NoEvent) | (Release(_), Press(_)) => *self = e,
-            (Press(_), NoEvent) => *self = e,
-            _ => (),
-        }
-    }
-}
-impl<T> Default for CustomEvent<T> {
-    fn default() -> Self {
-        CustomEvent::NoEvent
-    }
-}
-
-#[derive(Debug, Eq, PartialEq)]
-enum State<T: 'static> {
+#[derive(Debug, Eq, PartialEq, Copy, Clone)]
+enum State {
     NormalKey { keycode: KeyCode, coord: (u8, u8) },
     LayerModifier { value: usize, coord: (u8, u8) },
-    Custom { value: &'static T, coord: (u8, u8) },
 }
-impl<T> Copy for State<T> {}
-impl<T> Clone for State<T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-impl<T: 'static> State<T> {
+impl State {
     fn keycode(&self) -> Option<KeyCode> {
         match self {
             NormalKey { keycode, .. } => Some(*keycode),
@@ -184,13 +144,9 @@ impl<T: 'static> State<T> {
     fn tick(&self) -> Option<Self> {
         Some(*self)
     }
-    fn release(&self, c: (u8, u8), custom: &mut CustomEvent<T>) -> Option<Self> {
+    fn release(&self, c: (u8, u8)) -> Option<Self> {
         match *self {
             NormalKey { coord, .. } | LayerModifier { coord, .. } if coord == c => None,
-            Custom { value, coord } if coord == c => {
-                custom.update(CustomEvent::Release(value));
-                None
-            }
             _ => Some(*self),
         }
     }
@@ -212,9 +168,9 @@ impl From<Event> for Stacked {
     }
 }
 
-impl<T: 'static> Layout<T> {
+impl Layout {
     /// Creates a new `Layout` object.
-    pub fn new(layers: Layers<T>) -> Self {
+    pub fn new(layers: Layers) -> Self {
         Self {
             layers,
             default_layer: 0,
@@ -226,29 +182,16 @@ impl<T: 'static> Layout<T> {
     pub fn keycodes(&self) -> impl Iterator<Item = KeyCode> + '_ {
         self.states.iter().filter_map(State::keycode)
     }
-    /// A time event.
-    ///
-    /// This method must be called regularly, typically every millisecond.
-    ///
-    /// Returns the corresponding `CustomEvent`, allowing to manage
-    /// custom actions thanks to the `Action::Custom` variant.
-    pub fn tick(&mut self) -> CustomEvent<T> {
-        match self.stacked.pop_front() {
-            Some(s) => self.unstack(s),
-            None => CustomEvent::NoEvent,
-        }
-    }
-    fn unstack(&mut self, stacked: Stacked) -> CustomEvent<T> {
+
+    fn unstack(&mut self, stacked: Stacked) {
         use Event::*;
         match stacked.event {
             Release(i, j) => {
-                let mut custom = CustomEvent::NoEvent;
                 self.states = self
                     .states
                     .iter()
-                    .filter_map(|s| s.release((i, j), &mut custom))
+                    .filter_map(|s| s.release((i, j)))
                     .collect();
-                custom
             }
             Press(i, j) => {
                 let action = self.press_as_action((i, j), self.current_layer());
@@ -262,7 +205,7 @@ impl<T: 'static> Layout<T> {
             self.unstack(stacked);
         }
     }
-    fn press_as_action(&self, coord: (u8, u8), layer: usize) -> &'static Action<T> {
+    fn press_as_action(&self, coord: (u8, u8), layer: usize) -> &'static Action {
         use crate::action::Action::*;
         let action = self
             .layers
@@ -283,9 +226,9 @@ impl<T: 'static> Layout<T> {
     }
     fn do_action(
         &mut self,
-        action: &'static Action<T>,
+        action: &'static Action,
         coord: (u8, u8),
-    ) -> CustomEvent<T> {
+    ) {
         use Action::*;
         match action {
             NoOp | Trans => (),
@@ -297,13 +240,6 @@ impl<T: 'static> Layout<T> {
                     let _ = self.states.push(NormalKey { coord, keycode });
                 }
             }
-            &MultipleActions(v) => {
-                let mut custom = CustomEvent::NoEvent;
-                for action in v {
-                    custom.update(self.do_action(action, coord));
-                }
-                return custom;
-            }
             &Layer(value) => {
                 let _ = self.states.push(LayerModifier { value, coord });
             }
@@ -312,13 +248,7 @@ impl<T: 'static> Layout<T> {
                     self.default_layer = *value
                 }
             }
-            Custom(value) => {
-                if self.states.push(State::Custom { value, coord }).is_ok() {
-                    return CustomEvent::Press(value);
-                }
-            }
         }
-        CustomEvent::NoEvent
     }
 
     /// Obtain the index of the current active layer

@@ -27,6 +27,11 @@ version = "0.13.0"
 features = ["stm32f103"]
 path = "stm32f1"
 
+[features]
+left = []
+right = []
+default = ["left"]
+
 [profile.dev]
 panic = "abort"
 debug = true
