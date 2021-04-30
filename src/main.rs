@@ -403,7 +403,7 @@ mod app {
         );
 
         let (dma, scanout) = dma_key_scan(
-            (5 * 6).khz(),
+            5.khz(),
             Matrix { rows, cols },
             c.device.DMA1,
             c.device.TIM1,
