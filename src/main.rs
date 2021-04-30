@@ -44,6 +44,55 @@ pub fn usb_poll(usb_dev: &mut UsbDevice, keyboard: &mut UsbClass) {
     }
 }
 
+/// Columns of the keyboard matrix
+///
+/// Pin| Left Half wiring                    | Right half wiring
+/// ---|-----------------------------------|-----------------------------------
+/// PB3| Pinky col - 1                     | Pointer col + 1 & Thumb col +1
+/// PB4| Pinky home col                    | Ponter Home col & Thumb Home col
+/// PB5| Ring home col                     | Middle Home col & Thumb col -1
+/// PB6| Middle Home col & Thumb col -1    | Ring Home col
+/// PB7| Pointer Home col & Thumb Home col | Pinky Home col
+/// PB8| Pointer col + 1 & Thumb col + 1   | Pinky col - 1
+pub struct Cols(
+    pub PB3<Output<PushPull>>,
+    pub PB4<Output<PushPull>>,
+    pub PB5<Output<PushPull>>,
+    pub PB6<Output<PushPull>>,
+    pub PB7<Output<PushPull>>,
+    pub PB8<Output<PushPull>>,
+);
+
+/// Rows of the keyboard matrix
+///
+/// Pin | Wiring for both halfs
+/// ----|----------------------------------
+/// PA0 | Home Row + 2
+/// PA1 | Home Row + 1
+/// PA2 | Home Row for non-Pinky fingers
+/// PA3 | Home Row - 1 and Pinky Home
+/// PA4 | Howe Row - 2
+/// PA5 | Home Row - 3 & Thumb Home Row + 1
+/// PA6 | Thumb Home Row
+/// PA7 | Thumb Home Row - 1
+pub struct Rows(
+    pub PA0<Input<PullDown>>,
+    pub PA1<Input<PullDown>>,
+    pub PA2<Input<PullDown>>,
+    pub PA3<Input<PullDown>>,
+    pub PA4<Input<PullDown>>,
+    pub PA5<Input<PullDown>>,
+    pub PA6<Input<PullDown>>,
+    pub PA7<Input<PullDown>>,
+);
+
+
+/// All gpios used by the key matrix.
+pub struct Matrix {
+    pub rows: Rows,
+    pub cols: Cols,
+}
+
 /**
  * Setup DMA to scan an 8 row, 6 column keyboard matrix.
  *
@@ -96,6 +145,7 @@ pub fn usb_poll(usb_dev: &mut UsbDevice, keyboard: &mut UsbClass) {
 // and return DMA1CH5's interrupt status register?
 pub fn dma_key_scan(
     freq: impl Into<Hertz>,
+    _matrix: Matrix,
     dma: pac::DMA1,
     tim1: pac::TIM1,
     ahb: &mut AHB,
@@ -331,7 +381,7 @@ mod app {
         // NOTE: These have to be setup, though they are dropped, as without this setup
         // code, it's not possible to read the matrix.
         #[rustfmt::skip]
-        let _fcols = Cols(
+        let cols = Cols(
                   pb3.into_push_pull_output(&mut gpiob.crl),
                   pb4.into_push_pull_output(&mut gpiob.crl),
             gpiob.pb5.into_push_pull_output(&mut gpiob.crl),
@@ -339,7 +389,7 @@ mod app {
             gpiob.pb7.into_push_pull_output(&mut gpiob.crl),
             gpiob.pb8.into_push_pull_output(&mut gpiob.crh),
         );
-        let _frows = Rows(
+        let rows = Rows(
             gpioa.pa0.into_pull_down_input(&mut gpioa.crl),
             gpioa.pa1.into_pull_down_input(&mut gpioa.crl),
             gpioa.pa2.into_pull_down_input(&mut gpioa.crl),
@@ -352,6 +402,7 @@ mod app {
 
         let (dma, scanout) = dma_key_scan(
             (5 * 6).khz(),
+            Matrix {rows, cols},
             c.device.DMA1,
             c.device.TIM1,
             &mut rcc.ahb,
