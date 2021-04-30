@@ -2,30 +2,6 @@
 
 use crate::key_code::KeyCode;
 
-/// Behavior configuration of HoldTap.
-#[non_exhaustive]
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum HoldTapConfig {
-    /// Only the timeout will determine between hold and tap action.
-    ///
-    /// This is a sane default.
-    Default,
-    /// If there is a key press, the hold action is activated.
-    ///
-    /// This behavior is interesting for a key which the tap action is
-    /// not used in the flow of typing, like escape for example. If
-    /// you are annoyed by accidental tap, you can try this behavior.
-    HoldOnOtherKeyPress,
-    /// If there is a release and a press of another key, the hold
-    /// action is activated.
-    ///
-    /// This behavior is interesting for fast typist: the different
-    /// between hold and tap would more be based on the sequence of
-    /// events than on timing. Be aware that doing the good succession
-    /// of key might require some training.
-    PermissiveHold,
-}
-
 /// The different actions that can be done.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -53,42 +29,6 @@ where
     Layer(usize),
     /// Change the default layer.
     DefaultLayer(usize),
-    /// If the key is held more than `timeout` ticks (usually
-    /// milliseconds), performs the `hold` action, else performs the
-    /// `tap` action.  Mostly used with a modifier for the hold action
-    /// and a normal key on the tap action. Any action can be
-    /// performed, but using a `HoldTap` in a `HoldTap` is not
-    /// specified (but guaranteed to not crash).
-    ///
-    /// Different behaviors can be configured using the config field,
-    /// but whatever the configuration is, if the key is pressed more
-    /// than `timeout`, the hold action is activated (if no other
-    /// action was determined before).
-    HoldTap {
-        /// The duration, in ticks (usually milliseconds) giving the
-        /// difference between a hold and a tap.
-        timeout: u16,
-        /// The hold action.
-        hold: &'static Action<T>,
-        /// The tap action.
-        tap: &'static Action<T>,
-        /// Behavior configuration.
-        config: HoldTapConfig,
-        /// Configuration of the tap and hold holds the tap action.
-        ///
-        /// If you press and release the key in such a way that the tap
-        /// action is performed, and then press it again in less than
-        /// `tap_hold_interval` ticks, the tap action will
-        /// be held. This allows the tap action to be held by
-        /// pressing, releasing and holding the key, allowing the computer
-        //// to auto repeat the tap behavior.
-        ///
-        /// To deactivate the functionality, set this to 0.
-        ///
-        /// Not implemented yet, to not have behavior change with an
-        /// update, set this to 0.
-        tap_hold_interval: u16,
-    },
     /// Custom action.
     ///
     /// Define a user defined action. This enum can be anything you

@@ -45,7 +45,7 @@
 /// ```
 pub use layout_macro::layout;
 
-use crate::action::{Action, HoldTapConfig};
+use crate::action::Action;
 use crate::key_code::KeyCode;
 use arraydeque::ArrayDeque;
 use heapless::consts::U64;
@@ -71,7 +71,6 @@ where
     layers: Layers<T>,
     default_layer: usize,
     states: Vec<State<T>, U64>,
-    waiting: Option<WaitingState<T>>,
     stacked: Stack,
 }
 
@@ -203,75 +202,13 @@ impl<T: 'static> State<T> {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-struct WaitingState<T: 'static> {
-    coord: (u8, u8),
-    timeout: u16,
-    delay: u16,
-    hold: &'static Action<T>,
-    tap: &'static Action<T>,
-    config: HoldTapConfig,
-}
-enum WaitingAction {
-    Hold,
-    Tap,
-    NoOp,
-}
-impl<T> WaitingState<T> {
-    fn tick(&mut self, stacked: &Stack) -> WaitingAction {
-        self.timeout = self.timeout.saturating_sub(1);
-        match self.config {
-            HoldTapConfig::Default => (),
-            HoldTapConfig::HoldOnOtherKeyPress => {
-                if stacked.iter().any(|s| s.event.is_press()) {
-                    return WaitingAction::Hold;
-                }
-            }
-            HoldTapConfig::PermissiveHold => {
-                for (x, s) in stacked.iter().enumerate() {
-                    if s.event.is_press() {
-                        let (i, j) = s.event.coord();
-                        let target = Event::Release(i, j);
-                        if stacked.iter().skip(x + 1).any(|s| s.event == target) {
-                            return WaitingAction::Hold;
-                        }
-                    }
-                }
-            }
-        }
-        if let Some(&Stacked { since, .. }) = stacked
-            .iter()
-            .find(|s| self.is_corresponding_release(&s.event))
-        {
-            if self.timeout >= self.delay - since {
-                WaitingAction::Tap
-            } else {
-                WaitingAction::Hold
-            }
-        } else if self.timeout == 0 {
-            WaitingAction::Hold
-        } else {
-            WaitingAction::NoOp
-        }
-    }
-    fn is_corresponding_release(&self, event: &Event) -> bool {
-        matches!(event, Event::Release(i, j) if (*i, *j) == self.coord)
-    }
-}
-
 #[derive(Debug)]
 struct Stacked {
     event: Event,
-    since: u16,
 }
 impl From<Event> for Stacked {
     fn from(event: Event) -> Self {
-        Stacked { event, since: 0 }
-    }
-}
-impl Stacked {
-    fn tick(&mut self) {
-        self.since = self.since.saturating_add(1);
+        Stacked { event }
     }
 }
 
@@ -282,33 +219,12 @@ impl<T: 'static> Layout<T> {
             layers,
             default_layer: 0,
             states: Vec::new(),
-            waiting: None,
             stacked: ArrayDeque::new(),
         }
     }
     /// Iterates on the key codes of the current state.
     pub fn keycodes(&self) -> impl Iterator<Item = KeyCode> + '_ {
         self.states.iter().filter_map(State::keycode)
-    }
-    fn waiting_into_hold(&mut self) -> CustomEvent<T> {
-        if let Some(w) = &self.waiting {
-            let hold = w.hold;
-            let coord = w.coord;
-            self.waiting = None;
-            self.do_action(hold, coord, 0)
-        } else {
-            CustomEvent::NoEvent
-        }
-    }
-    fn waiting_into_tap(&mut self) -> CustomEvent<T> {
-        if let Some(w) = &self.waiting {
-            let tap = w.tap;
-            let coord = w.coord;
-            self.waiting = None;
-            self.do_action(tap, coord, 0)
-        } else {
-            CustomEvent::NoEvent
-        }
     }
     /// A time event.
     ///
@@ -317,18 +233,9 @@ impl<T: 'static> Layout<T> {
     /// Returns the corresponding `CustomEvent`, allowing to manage
     /// custom actions thanks to the `Action::Custom` variant.
     pub fn tick(&mut self) -> CustomEvent<T> {
-        self.states = self.states.iter().filter_map(State::tick).collect();
-        self.stacked.iter_mut().for_each(Stacked::tick);
-        match &mut self.waiting {
-            Some(w) => match w.tick(&self.stacked) {
-                WaitingAction::Hold => self.waiting_into_hold(),
-                WaitingAction::Tap => self.waiting_into_tap(),
-                WaitingAction::NoOp => CustomEvent::NoEvent,
-            },
-            None => match self.stacked.pop_front() {
-                Some(s) => self.unstack(s),
-                None => CustomEvent::NoEvent,
-            },
+        match self.stacked.pop_front() {
+            Some(s) => self.unstack(s),
+            None => CustomEvent::NoEvent,
         }
     }
     fn unstack(&mut self, stacked: Stacked) -> CustomEvent<T> {
@@ -345,14 +252,13 @@ impl<T: 'static> Layout<T> {
             }
             Press(i, j) => {
                 let action = self.press_as_action((i, j), self.current_layer());
-                self.do_action(action, (i, j), stacked.since)
+                self.do_action(action, (i, j))
             }
         }
     }
     /// Register a key event.
     pub fn event(&mut self, event: Event) {
         if let Some(stacked) = self.stacked.push_back(event.into()) {
-            self.waiting_into_hold();
             self.unstack(stacked);
         }
     }
@@ -379,29 +285,10 @@ impl<T: 'static> Layout<T> {
         &mut self,
         action: &'static Action<T>,
         coord: (u8, u8),
-        delay: u16,
     ) -> CustomEvent<T> {
-        assert!(self.waiting.is_none());
         use Action::*;
         match action {
             NoOp | Trans => (),
-            &HoldTap {
-                timeout,
-                hold,
-                tap,
-                config,
-                ..
-            } => {
-                let waiting: WaitingState<T> = WaitingState {
-                    coord,
-                    timeout,
-                    delay,
-                    hold,
-                    tap,
-                    config,
-                };
-                self.waiting = Some(waiting);
-            }
             &KeyCode(keycode) => {
                 let _ = self.states.push(NormalKey { coord, keycode });
             }
@@ -413,7 +300,7 @@ impl<T: 'static> Layout<T> {
             &MultipleActions(v) => {
                 let mut custom = CustomEvent::NoEvent;
                 for action in v {
-                    custom.update(self.do_action(action, coord, delay));
+                    custom.update(self.do_action(action, coord));
                 }
                 return custom;
             }
@@ -453,7 +340,6 @@ mod test {
     extern crate std;
     use super::{Event::*, Layers, Layout, *};
     use crate::action::Action::*;
-    use crate::action::HoldTapConfig;
     use crate::action::{k, l, m};
     use crate::key_code::KeyCode;
     use crate::key_code::KeyCode::*;
