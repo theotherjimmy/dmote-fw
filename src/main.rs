@@ -86,7 +86,6 @@ pub struct Rows(
     pub PA7<Input<PullDown>>,
 );
 
-
 /// All gpios used by the key matrix.
 pub struct Matrix {
     pub rows: Rows,
@@ -223,8 +222,7 @@ pub fn dma_key_scan(
         .set_memory_address(scanout.as_mut_ptr() as *mut u8 as u32, true);
     // NOTE: This is the number of elements.
     dma.5.set_transfer_length(
-        core::mem::size_of_val(scanout)
-            / core::mem::size_of_val(&scanout[0][0]),
+        core::mem::size_of_val(scanout) / core::mem::size_of_val(&scanout[0][0]),
     );
     #[rustfmt::skip]
     dma.5.ch().cr.modify(|_read, write| {
@@ -406,7 +404,7 @@ mod app {
 
         let (dma, scanout) = dma_key_scan(
             (5 * 6).khz(),
-            Matrix {rows, cols},
+            Matrix { rows, cols },
             c.device.DMA1,
             c.device.TIM1,
             &mut rcc.ahb,
@@ -420,10 +418,7 @@ mod app {
                 usb_class,
                 dma,
                 scanout,
-                keyboard: Keyboard{
-                    debouncer,
-                    layout,
-                }
+                keyboard: Keyboard { debouncer, layout },
             },
             init::Monotonics(),
         )
@@ -472,7 +467,7 @@ mod app {
             }
         }
 
-        let report: KbHidReport = keyboard.lock(|Keyboard{ layout, debouncer }|{
+        let report: KbHidReport = keyboard.lock(|Keyboard { layout, debouncer }| {
             for event in debouncer.events(events) {
                 layout.event(event);
             }
