@@ -34,6 +34,7 @@ pub static LAYOUT: keyberon::layout::Layers = keyberon::layout::layout!{{
     [_      _      _       '`'    LShift LCtrl  RCtrl  BSpace ']'     _      _      _     ]
     [_      _      _       Escape Space  LAlt   RAlt   Enter  Escape  _      _      _     ]
     [_      _      _       Pause  End    Home   PgUp   PgDown PScreen _      _      _     ]
+// NOTE: this keyboard is in two halfs and this ^ is the first column of the right half
 }};
 
 /// Poll usb device. Called from within USB rx and tx interrupts
