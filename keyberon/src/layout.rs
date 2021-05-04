@@ -47,7 +47,6 @@ pub use layout_macro::layout;
 
 use crate::action::Action;
 use crate::key_code::KeyCode;
-use arraydeque::ArrayDeque;
 use heapless::consts::U64;
 use heapless::Vec;
 
@@ -60,15 +59,12 @@ use State::*;
 /// key i=2, j=3 on the layer 1.
 pub type Layers = &'static [&'static [&'static [Action]]];
 
-type Stack = ArrayDeque<[Stacked; 16], arraydeque::behavior::Wrapping>;
-
 /// The layout manager. It takes `Event`s and `tick`s as input, and
 /// generate keyboard reports.
 pub struct Layout {
     layers: Layers,
     default_layer: usize,
     states: Vec<State, U64>,
-    stacked: Stack,
 }
 
 /// An event on the key matrix.
@@ -141,9 +137,6 @@ impl State {
             _ => None,
         }
     }
-    fn tick(&self) -> Option<Self> {
-        Some(*self)
-    }
     fn release(&self, c: (u8, u8)) -> Option<Self> {
         match *self {
             NormalKey { coord, .. } | LayerModifier { coord, .. } if coord == c => None,
@@ -158,16 +151,6 @@ impl State {
     }
 }
 
-#[derive(Debug)]
-struct Stacked {
-    event: Event,
-}
-impl From<Event> for Stacked {
-    fn from(event: Event) -> Self {
-        Stacked { event }
-    }
-}
-
 impl Layout {
     /// Creates a new `Layout` object.
     pub fn new(layers: Layers) -> Self {
@@ -175,7 +158,6 @@ impl Layout {
             layers,
             default_layer: 0,
             states: Vec::new(),
-            stacked: ArrayDeque::new(),
         }
     }
     /// Iterates on the key codes of the current state.
@@ -183,17 +165,16 @@ impl Layout {
         self.states.iter().filter_map(State::keycode)
     }
 
-    fn unstack(&mut self, stacked: Stacked) {
-        use Event::*;
-        match stacked.event {
-            Release(i, j) => {
+    fn unstack(&mut self, event: Event) {
+        match event {
+            Event::Release(i, j) => {
                 self.states = self
                     .states
                     .iter()
                     .filter_map(|s| s.release((i, j)))
                     .collect();
             }
-            Press(i, j) => {
+            Event::Press(i, j) => {
                 let action = self.press_as_action((i, j), self.current_layer());
                 self.do_action(action, (i, j))
             }
@@ -201,9 +182,7 @@ impl Layout {
     }
     /// Register a key event.
     pub fn event(&mut self, event: Event) {
-        if let Some(stacked) = self.stacked.push_back(event.into()) {
-            self.unstack(stacked);
-        }
+        self.unstack(event);
     }
     fn press_as_action(&self, coord: (u8, u8), layer: usize) -> &'static Action {
         use crate::action::Action::*;
