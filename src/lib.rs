@@ -1,13 +1,8 @@
-#![no_main]
 #![no_std]
 use cortex_m::singleton;
 use generic_array::typenum::{U6, U8};
-use keyberon::debounce::Debouncer;
-use keyberon::key_code::KbHidReport;
-use keyberon::layout::Layout;
 use keyberon::matrix::PressedKeys;
-use panic_halt as _;
-use rtic::app;
+use packed_struct::prelude::*;
 use stm32f1::stm32f103;
 use stm32f1xx_hal::gpio::{
     gpioa::{PA0, PA1, PA2, PA3, PA4, PA5, PA6, PA7},
@@ -17,10 +12,18 @@ use stm32f1xx_hal::gpio::{
 use stm32f1xx_hal::prelude::*;
 use stm32f1xx_hal::rcc::{Clocks, Enable, GetBusFreq, Reset, AHB, APB2};
 use stm32f1xx_hal::time::Hertz;
-use stm32f1xx_hal::usb::{Peripheral, UsbBus, UsbBusType};
 use stm32f1xx_hal::{dma, pac};
-use usb_device::bus::UsbBusAllocator;
-use usb_device::class::UsbClass as _;
+
+#[derive(PackedStruct, Debug, Copy, Clone, PartialEq)]
+#[packed_struct(bit_numbering = "msb0")]
+pub struct KeyEvent {
+    #[packed_field(bits = "0..=2")]
+    pub row: Integer<u8, packed_bits::Bits3>,
+    #[packed_field(bits = "3..=5")]
+    pub col: Integer<u8, packed_bits::Bits3>,
+    #[packed_field(bits = "7")]
+    pub brk: bool,
+}
 
 /// Compute the Auto Reload Register and Prescaller Register values for a timer
 #[inline(always)]
@@ -29,19 +32,6 @@ fn compute_arr_presc(freq: u32, clock: u32) -> (u16, u16) {
     let psc = ((ticks - 1) / (1 << 16)) as u16;
     let arr = (ticks / (psc + 1) as u32) as u16;
     (psc, arr)
-}
-
-// NOTE: () is used in place of LEDs, as we don't care about them right now
-/// Type alias for a keyboard with no LEDs.
-type UsbClass = keyberon::Class<'static, UsbBusType, ()>;
-/// Type alias for usb devices.
-type UsbDevice = usb_device::device::UsbDevice<'static, UsbBusType>;
-
-/// Poll usb device. Called from within USB rx and tx interrupts
-pub fn usb_poll(usb_dev: &mut UsbDevice, keyboard: &mut UsbClass) {
-    if usb_dev.poll(&mut [keyboard]) {
-        keyboard.poll();
-    }
 }
 
 /// Columns of the keyboard matrix
@@ -140,7 +130,7 @@ pub struct Matrix {
  * once. However, as this takes ownership of the DMA1 and TIM1 structs without returning
  * them, it should not be possible to call this more than once.
  */
-// TODO: better return type? Perhaps it would be better to accept DMA1CH2 and DMA1CH5
+// TODO: better return type? Perhaps it would be better to accept DMA1CH4 and DMA1CH5
 // and return DMA1CH5's interrupt status register?
 pub fn dma_key_scan(
     freq: impl Into<Hertz>,
@@ -151,14 +141,19 @@ pub fn dma_key_scan(
     apb2: &mut APB2,
     clocks: &Clocks,
 ) -> (dma::dma1::Channels, &'static [[u8; 6]; 2]) {
+    // Values to be written to the Bit Set & Reset Register (BSRR).
+    //
+    // The upper 16 bits (16..=31) set pins to 0 when written (reset), and the
+    // lower 16 bits (0..=15) set pins to 1 when written (set). This way we won't attept
+    // to write to bits that are not part of those that are part of the matrix
     #[rustfmt::skip]
-    const SCANIN: [u16; 6] = [
-        0b000001000,
-        0b000010000,
-        0b000100000,
-        0b001000000,
-        0b010000000,
-        0b100000000
+    const SCANIN: [u32; 6] = [
+        (0b111110000 << 16) | 0b000001000,
+        (0b111101000 << 16) | 0b000010000,
+        (0b111011000 << 16) | 0b000100000,
+        (0b110111000 << 16) | 0b001000000,
+        (0b101111000 << 16) | 0b010000000,
+        (0b011111000 << 16) | 0b100000000,
     ];
     let mut dma = dma.split(ahb);
     let scanout = singleton!(: [[u8; 6]; 2] = [[0; 6]; 2]).unwrap();
@@ -169,27 +164,37 @@ pub fn dma_key_scan(
     // to have a period that matches 6 * the input frequency, and we have to setup output
     // compare for the 2/5 point of that period.
     //
-    // DMA CH2 is connected to the output compare, so it must do the column strobe signal.
+    // DMA CH2 is connected to the output compare 1, so it was used as the column strobe
+    // signal. However, It's also triggered by a UART3 TX empty fifo, which may always
+    // be empty. This causes an unending cascade of spurious DMA requests that causes
+    // the columns to be strobed as fast as the memory bus allows. This breaks the
+    // synchronization between the row read and column strobe, which is required for this
+    // code to function.
+    //
+    // Instead, we use output compare 4, which is mapped to DMA CH4, for column strobe.
+    //
+    // I could have also disabled the DMA request, but it seems a bit harder than changing
+    // output compare and DMA channels, as `s/dma.2/dma.4/g`, `s/cc1/cc4/g` etc. suffices.
     //
     // DMA CH5 is connected to the the update/reset of the timer, so it must be the row
     // read.
     //
     // Registers initialisms are defined in line
 
-    // # DMA1 CH2: Requested by Output Compare 1 (ch1) with Timer 1
-    dma.2.set_peripheral_address(
+    // # DMA1 CH4: Requested by Output Compare 4 (ch4) with Timer 1
+    dma.4.set_peripheral_address(
         // Safety: we don't enable pointer incrimenting of Perihperal addresses
         // Further, this pointer dereference is always safe.
-        unsafe { (*stm32f103::GPIOB::ptr()).odr.as_ptr() } as u32,
+        unsafe { (*stm32f103::GPIOB::ptr()).bsrr.as_ptr() } as u32,
         false,
     );
     // Safety: we have the lenth correct below. This should probably be unsafe, because
     // we're asking the DMA hardware to derefrence a raw pointer. But hey, it's not.
-    dma.2.set_memory_address(SCANIN.as_ptr() as u32, true);
-    dma.2
+    dma.4.set_memory_address(SCANIN.as_ptr() as u32, true);
+    dma.4
         .set_transfer_length(core::mem::size_of_val(&SCANIN) / core::mem::size_of_val(&SCANIN[0]));
     #[rustfmt::skip]
-    dma.2.ch().cr.modify(|_read, write| {
+    dma.4.ch().cr.modify(|_read, write| {
         write
             // EN: Enable
             // NOTE: we're enabling DMA here, but no triggeres have been enabled yet
@@ -205,8 +210,8 @@ pub fn dma_key_scan(
             // NOTE: The perihperal is always 32 bits
             .psize().bits32()
             // MSIZE: Memory SIZE
-            // Since we're using bit 8 of port B, we have to store u16s
-            .msize().bits16()
+            // We're storing to the BSRR, which is of size 32
+            .msize().bits32()
     });
 
     // # DMA1 CH5: Requested by Update/Overflow of Timer 1
@@ -248,16 +253,16 @@ pub fn dma_key_scan(
     pac::TIM1::reset(apb2);
     let timeout = (freq.into() * 6).0;
     let (psc, arr) = compute_arr_presc(timeout, clk.0);
-    // CCR1: Counter Compare Register 1 (channel 1, I think).
+    // CCR4: Counter Compare Register 4 (channel 4, I think).
     // CCR: Courter Compare Register (it's the value to compare with).
-    tim1.ccr1.modify(|_, w| w.ccr().bits(arr * 2 / 5));
+    tim1.ccr4.modify(|_, w| w.ccr().bits(arr * 2 / 5));
     // Impl NOTE: We enable the follwing
     // UDE: Update DMA Event
-    // CC1DE: Counter Compare 1 DMA Event
-    tim1.dier.modify(|_, w| w.ude().enabled().cc1de().enabled());
-    // CC1E: Counter Compare 1 Enable (should probably be .enabled, but for some reason
+    // CC4DE: Counter Compare 4 DMA Event
+    tim1.dier.modify(|_, w| w.ude().enabled().cc4de().enabled());
+    // CC4E: Counter Compare 4 Enable (should probably be .enabled, but for some reason
     // the hal only exports .set_bit)
-    tim1.ccer.modify(|_, w| w.cc1e().set_bit());
+    tim1.ccer.modify(|_, w| w.cc4e().set_bit());
 
     // pause
     // CEN: Counter ENabled
@@ -284,198 +289,16 @@ pub fn dma_key_scan(
     (dma, &*scanout)
 }
 
-/// Mapping from switch positions to keys symbols; 'a', '1', '$', etc.
-#[cfg(feature = "left")]
-#[rustfmt::skip]
-pub static LAYOUT: keyberon::layout::Layers = keyberon::layout::layout!{{
-    [_      _      2       3      4      5    ]
-    [=      1      W       E      R      T    ]
-    [Tab    Q      S       D      F      G    ]
-    [Escape A      X       C      V      B    ]
-    [LShift Z  NonUsBslash Left   Right  _    ]
-    [_      _      _       '`'    LShift LCtrl]
-    [_      _      _       Escape Space  LAlt ]
-    [_      _      _       Pause  End    Home ]
-}};
+pub fn keys_from_scan(scanout_half: &[u8; 6]) -> PressedKeys<U8, U6> {
+    let mut events: PressedKeys<U8, U6> = PressedKeys::default();
 
-#[cfg(feature = "right")]
-#[rustfmt::skip]
-pub static LAYOUT: keyberon::layout::Layers = keyberon::layout::layout!{{
-    [6      7      8       9      _      _     ]
-    [Y      U      I       O      0      -     ]
-    [H      J      K       L      P      '\\'  ]
-    [N      M      ,       .      ;      Quote ]
-    [_      Up     Down    '['    /      RShift]
-    [RCtrl  BSpace ']'     _      _      _     ]
-    [RAlt   Enter  Escape  _      _      _     ]
-    [PgUp   PgDown PScreen _      _      _     ]
-}};
-
-/// Resources to build a keyboard
-pub struct Keyboard {
-    pub layout: Layout,
-    pub debouncer: Debouncer<PressedKeys<U8, U6>>,
-}
-
-#[app(device = stm32f1xx_hal::pac, peripherals = true)]
-mod app {
-    use super::*;
-    use embedded_hal::digital::v2::OutputPin;
-
-    #[resources]
-    struct Resources {
-        usb_dev: UsbDevice,
-        usb_class: UsbClass,
-        keyboard: Keyboard,
-        dma: dma::dma1::Channels,
-        scanout: &'static [[u8; 6]; 2],
-    }
-
-    #[init]
-    fn init(c: init::Context) -> (init::LateResources, init::Monotonics) {
-        static mut USB_BUS: Option<UsbBusAllocator<UsbBusType>> = None;
-
-        let mut flash = c.device.FLASH.constrain();
-        let mut rcc = c.device.RCC.constrain();
-        let debouncer = Debouncer::new(PressedKeys::default(), PressedKeys::default(), 25);
-        let layout = Layout::new(LAYOUT);
-
-        let clocks = rcc
-            .cfgr
-            .use_hse(8_u32.mhz())
-            .sysclk(72_u32.mhz())
-            .pclk1(36_u32.mhz())
-            .freeze(&mut flash.acr);
-
-        let mut gpioa = c.device.GPIOA.split(&mut rcc.apb2);
-        let mut gpiob = c.device.GPIOB.split(&mut rcc.apb2);
-        let mut afio = c.device.AFIO.constrain(&mut rcc.apb2);
-        let (_, pb3, pb4) = afio.mapr.disable_jtag(gpioa.pa15, gpiob.pb3, gpiob.pb4);
-
-        // BluePill board has a pull-up resistor on the D+ line.
-        // Pull the D+ pin down to send a RESET condition to the USB bus.
-        let mut usb_dp = gpioa.pa12.into_push_pull_output(&mut gpioa.crh);
-        // If we can't do this, we can't be a keyboard, so we _should_ panic if this
-        // fails
-        match usb_dp.set_low() {
-            Ok(_) => (),
-            Err(_) => panic!(),
-        };
-        cortex_m::asm::delay(clocks.sysclk().0 / 100);
-
-        let usb = Peripheral {
-            usb: c.device.USB,
-            pin_dm: gpioa.pa11,
-            pin_dp: usb_dp.into_floating_input(&mut gpioa.crh),
-        };
-
-        *USB_BUS = Some(UsbBus::new(usb));
-        // If we can't do this, we can't be a keyboard, so we _should_ panic if this
-        // fails
-        let usb_bus = match USB_BUS.as_ref() {
-            Some(ub) => ub,
-            None => panic!(),
-        };
-
-        let usb_class = keyberon::new_class(usb_bus, ());
-        let usb_dev = keyberon::new_device(usb_bus);
-
-        // NOTE: These have to be setup, though they are dropped, as without this setup
-        // code, it's not possible to read the matrix.
-        #[rustfmt::skip]
-        let cols = Cols(
-                  pb3.into_push_pull_output(&mut gpiob.crl),
-                  pb4.into_push_pull_output(&mut gpiob.crl),
-            gpiob.pb5.into_push_pull_output(&mut gpiob.crl),
-            gpiob.pb6.into_push_pull_output(&mut gpiob.crl),
-            gpiob.pb7.into_push_pull_output(&mut gpiob.crl),
-            gpiob.pb8.into_push_pull_output(&mut gpiob.crh),
-        );
-        let rows = Rows(
-            gpioa.pa0.into_pull_down_input(&mut gpioa.crl),
-            gpioa.pa1.into_pull_down_input(&mut gpioa.crl),
-            gpioa.pa2.into_pull_down_input(&mut gpioa.crl),
-            gpioa.pa3.into_pull_down_input(&mut gpioa.crl),
-            gpioa.pa4.into_pull_down_input(&mut gpioa.crl),
-            gpioa.pa5.into_pull_down_input(&mut gpioa.crl),
-            gpioa.pa6.into_pull_down_input(&mut gpioa.crl),
-            gpioa.pa7.into_pull_down_input(&mut gpioa.crl),
-        );
-
-        let (dma, scanout) = dma_key_scan(
-            5.khz(),
-            Matrix { rows, cols },
-            c.device.DMA1,
-            c.device.TIM1,
-            &mut rcc.ahb,
-            &mut rcc.apb2,
-            &clocks,
-        );
-
-        (
-            init::LateResources {
-                usb_dev,
-                usb_class,
-                dma,
-                scanout,
-                keyboard: Keyboard { debouncer, layout },
-            },
-            init::Monotonics(),
-        )
-    }
-
-    #[task(binds = USB_HP_CAN_TX, priority = 2, resources = [usb_dev, usb_class])]
-    fn usb_tx(mut c: usb_tx::Context) {
-        let usb_tx::Resources {
-            ref mut usb_dev,
-            ref mut usb_class,
-        } = c.resources;
-        (usb_dev, usb_class).lock(|dev, class| usb_poll(dev, class));
-    }
-
-    #[task(binds = USB_LP_CAN_RX0, priority = 2, resources = [usb_dev, usb_class])]
-    fn usb_rx(mut c: usb_rx::Context) {
-        let usb_rx::Resources {
-            ref mut usb_dev,
-            ref mut usb_class,
-        } = c.resources;
-        (usb_dev, usb_class).lock(|dev, class| usb_poll(dev, class));
-    }
-
-    #[task(binds = DMA1_CHANNEL5, priority = 1, resources = [
-        usb_class, keyboard, &dma, &scanout
-    ])]
-    fn tick(mut c: tick::Context) {
-        let tick::Resources {
-            ref mut usb_class,
-            ref mut keyboard,
-            dma,
-            scanout,
-        } = c.resources;
-        let half = dma.5.isr().htif4().bits();
-        // Clear all pending interrupts, irrespective of type
-        dma.5.ifcr().write(|w| w.cgif4().clear());
-
-        let mut events: PressedKeys<U8, U6> = PressedKeys::default();
-
-        for i in 0..6 {
-            let row: u8 = scanout[if half { 0 } else { 1 }][i];
-            for bit in 0..=7 {
-                if row & (1 << bit) != 0 {
-                    events.0.as_mut_slice()[bit].as_mut_slice()[i] = true;
-                }
+    for i in 0..6 {
+        let row = scanout_half[i];
+        for bit in 0..=7 {
+            if row & (1 << bit) != 0 {
+                events.0.as_mut_slice()[bit].as_mut_slice()[i] = true;
             }
         }
-
-        let report: KbHidReport = keyboard.lock(|Keyboard { layout, debouncer }| {
-            for event in debouncer.events(events) {
-                layout.event(event);
-            }
-            layout.keycodes().collect()
-        });
-
-        if usb_class.lock(|k| k.device_mut().set_keyboard_report(report.clone())) {
-            while let Ok(0) = usb_class.lock(|k| k.write(report.as_bytes())) {}
-        }
     }
+    events
 }

@@ -27,10 +27,9 @@ version = "0.13.0"
 features = ["stm32f103"]
 path = "stm32f1"
 
-[features]
-left = []
-right = []
-default = ["left"]
+[dependencies.packed_struct]
+version = "0.5.0"
+default_features = false
 
 [profile.dev]
 panic = "abort"
