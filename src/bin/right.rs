@@ -15,7 +15,7 @@ use stm32f1xx_hal::usb::{Peripheral, UsbBus, UsbBusType};
 use usb_device::bus::UsbBusAllocator;
 use usb_device::class::UsbClass as _;
 
-use dmote_fw::{dma_key_scan, keys_from_scan, Cols, KeyEvent, Matrix, Rows};
+use dmote_fw::{dma_key_scan, keys_from_scan, Cols, KeyEvent, Matrix, Rows, PHONE_LINE_BAUD};
 
 // NOTE: () is used in place of LEDs, as we don't care about them right now
 /// Type alias for a keyboard with no LEDs.
@@ -122,7 +122,7 @@ mod app {
             c.device.USART3,
             (pin_tx, pin_rx),
             &mut afio.mapr,
-            Config::default().baudrate(115_200.bps()),
+            Config::default().baudrate(PHONE_LINE_BAUD.bps()),
             clocks,
             &mut rcc.apb1,
         );

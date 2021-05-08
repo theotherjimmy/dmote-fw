@@ -1,5 +1,6 @@
 #![no_main]
 #![no_std]
+use nb::block;
 use generic_array::typenum::{U6, U8};
 use keyberon::debounce::Debouncer;
 use keyberon::layout::Event;
@@ -11,7 +12,7 @@ use stm32f1xx_hal::prelude::*;
 use stm32f1xx_hal::serial::Tx;
 use stm32f1xx_hal::{dma, pac};
 
-use dmote_fw::{dma_key_scan, keys_from_scan, Cols, KeyEvent, Matrix, Rows};
+use dmote_fw::{dma_key_scan, keys_from_scan, Cols, KeyEvent, Matrix, Rows, PHONE_LINE_BAUD};
 
 /// Resources to build a keyboard
 pub struct Keyboard {
@@ -57,7 +58,7 @@ mod app {
             c.device.USART3,
             (pin_tx, pin_rx),
             &mut afio.mapr,
-            Config::default().baudrate(115_200.bps()),
+            Config::default().baudrate(PHONE_LINE_BAUD.bps()),
             clocks,
             &mut rcc.apb1,
         );
@@ -134,7 +135,30 @@ mod app {
                     Ok(p) => p,
                     Err(_e) => panic!(),
                 };
-                tx.write(packed[0]).unwrap();
+                //NOTE: Despite the call to block here, this is real time. when
+                // fewer than 3 keys are pressed within 200us, on this half of
+                // the keyboard, we can transmit them all before the next
+                // interrupt, but just barely. transmitting 2 press/release
+                // events takes about 174us at the selected baud rate, 115_200
+                // bps.
+                //
+                // Luckliy, we interleave packing and sending, so really we
+                // have to acomplish debouncing in 27us to meet this deadline.
+                // This allows us 1900 cycles worth of time to leave the prior
+                // interrupt, enter this interrupt, debounce and start
+                // transmitting. That's a pretty tight deadline.
+                //
+                // The prior `unwrap` probably only failed when you hit two keys
+                // in the same 200us window, which was  pretty unlikely, but not
+                // impossible to do during normal typing. I'm okay with a slight
+                // delay if you manage to do that.   Especially considering that
+                // the debouncer adds another 5ms of latency.
+                match block!(tx.write(packed[0])) {
+                    Ok(_) => (),
+                    // NOTE: This is of  the type `Infallible`, so it's
+                    // actually impossible to hit
+                    Err(_) => unreachable!()
+                }
             }
         });
     }

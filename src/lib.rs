@@ -302,3 +302,18 @@ pub fn keys_from_scan(scanout_half: &[u8; 6]) -> PressedKeys<U8, U6> {
     }
     events
 }
+
+
+/// Between the halfs of my keyboard, there is a phone line (RJ9) serial
+/// connection. I tried higher speeds, but they were not as reliable.
+///
+/// This is the baud rate for that Serial.
+/// Use this by called `.bps()` on this value.
+///
+/// TODO: Rework this when the following is not an error:
+///  error[E0015]: calls in constants are limited to constant functions,
+///  tuple structs and tuple variants
+///     --> src/lib.rs:319:30
+///      |
+///  319 | const PHONE_LINE_BAUD: Bps = 115_200.bps();
+pub const PHONE_LINE_BAUD: u32 = 115_200;
