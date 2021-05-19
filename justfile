@@ -10,11 +10,13 @@ _openocd-pipe:
     script target/stm32f1x.cfg
 
 # Debug a the side of the keyboard with gdb
-debug side: build
+debug side:
     #!/usr/bin/env -S gdb -q -ix
     file {{build-dir}}/release/{{side}}
+    break src/bin/right.rs:251
+    break src/lib.rs:313
+    info breakpoints
     {{connect}}
-    load
 
 # Flash a the side of the keyboard with gdb
 flash side: build
