@@ -1,7 +1,6 @@
 #![no_std]
 use cortex_m::singleton;
-use generic_array::typenum::{U6, U8};
-use keyberon::matrix::PressedKeys;
+use keyberon::layout::Event;
 use packed_struct::prelude::*;
 use stm32f1::stm32f103;
 use stm32f1xx_hal::gpio::{
@@ -14,6 +13,10 @@ use stm32f1xx_hal::rcc::{Clocks, Enable, GetBusFreq, Reset, AHB, APB2};
 use stm32f1xx_hal::time::Hertz;
 use stm32f1xx_hal::{dma, pac};
 
+/// The KeyEvent struct is a packed representation of a key event that is
+/// sent over the phone line.
+///
+/// As it turns out, we only need 7 bits.
 #[derive(PackedStruct, Debug, Copy, Clone, PartialEq)]
 #[packed_struct(bit_numbering = "msb0")]
 pub struct KeyEvent {
@@ -289,31 +292,274 @@ pub fn dma_key_scan(
     (dma, &*scanout)
 }
 
-pub fn keys_from_scan(scanout_half: &[u8; 6]) -> PressedKeys<U8, U6> {
-    let mut events: PressedKeys<U8, U6> = PressedKeys::default();
-
-    for i in 0..6 {
-        let row = scanout_half[i];
-        for bit in 0..=7 {
-            if row & (1 << bit) != 0 {
-                events.0.as_mut_slice()[bit].as_mut_slice()[i] = true;
-            }
-        }
-    }
-    events
+pub struct KeyScanIter<'a> {
+    scanout_half: &'a [u8; 6],
+    triggers: &'a mut [[QuickDraw; 8]; 6],
+    now: u32,
+    stable_timeout: u32,
+    row: usize,
+    col: usize,
+    row_val: u8,
 }
 
+impl<'a> Iterator for KeyScanIter<'a> {
+    type Item = Event;
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.col < 6 {
+            if self.row == 0 {
+                // Unsafe here is perfectly safe, as we're reading a reference as volatile.
+                // It is, however, necessary, as this will change from beneath us when it's
+                // populated by the DMA scan.
+                self.row_val = unsafe {core::ptr::read_volatile(&self.scanout_half[self.col])};
+            }
+            while self.row < 8 {
+                let press = (self.row_val & (1 << self.row)) != 0;
+                let trigger_row = &mut self.triggers[self.col];
+                let to_ret = trigger_row[self.row]
+                    .step(press, self.now, self.stable_timeout)
+                    .map(|e| {
+                        if e {
+                            Event::Press(self.row as u8, self.col as u8)
+                        } else {
+                            Event::Release(self.row as u8, self.col as u8)
+                        }
+                    });
+                self.row += 1;
+                if to_ret.is_some() {
+                    return to_ret;
+                }
+            }
+            self.col += 1;
+            self.row = 0;
+        }
+        self.col = 0;
+        return None;
+    }
+}
+
+/// Convenience function that accepts a scanout and produces a sequence of
+/// triggered from the scanout_half produced by DMA
+pub fn keys_from_scan<'a>(
+    scanout_half: &'a [u8; 6],
+    triggers: &'a mut [[QuickDraw; 8]; 6],
+    now: u32,
+    stable_timeout: u32,
+) -> impl Iterator<Item=Event> + 'a {
+    KeyScanIter {
+        scanout_half,
+        triggers,
+        now,
+        stable_timeout,
+        row: 0,
+        col: 0,
+        row_val: 0,
+    }
+}
 
 /// Between the halfs of my keyboard, there is a phone line (RJ9) serial
 /// connection. I tried higher speeds, but they were not as reliable.
 ///
 /// This is the baud rate for that Serial.
 /// Use this by called `.bps()` on this value.
-///
-/// TODO: Rework this when the following is not an error:
-///  error[E0015]: calls in constants are limited to constant functions,
-///  tuple structs and tuple variants
-///     --> src/lib.rs:319:30
-///      |
-///  319 | const PHONE_LINE_BAUD: Bps = 115_200.bps();
+//
+// TODO: Rework this when the following is not an error:
+//  error[E0015]: calls in constants are limited to constant functions,
+//  tuple structs and tuple variants
+//     --> src/lib.rs:319:30
+//      |
+//  319 | const PHONE_LINE_BAUD: Bps = 115_200.bps();
 pub const PHONE_LINE_BAUD: u32 = 115_200;
+
+/// A quick draw style switch Schmitt trigger.
+///
+/// This debouncer is designed for minimum latency, and not much else.
+///
+/// The idea is that we say that a change is reported _before_ debouncing.
+/// That means that we end a press/release event the moment it changes state,
+/// and afterwards we ensure that we don't send any of the bounces until we're
+/// confident that the key has stabilized.
+///
+/// So, something like the following state diagram:
+///
+///  ```text
+///  text on arrows is input
+///  [] surround output events
+///  {} surround states
+///  D - a down or pressed key from a scan or as an event
+///  U - an up or released key from a scan or as an event
+///  S - stable timeout has been reached
+///
+/// ┌───────────S[D]─┬─D─{Bouncing_D_D}
+/// │               !S     ^   │
+/// │                └─────┤   U
+/// ├──────────┐           D   │
+/// v          D           │   v
+/// {Stable_D}─┴─U[U]─┬─>{Bouncing_D_U}
+/// ^                 │        │
+/// │                 │        U
+/// S                 └─────!S─┤
+/// ├─!S────────────┐          S
+/// D               │          │
+/// │               │          v
+/// {Bouncing_U_D}<─┴─D[D]─┬─{Stable_U}
+/// ^     │                │   ^
+/// │     U                └─U─┤
+/// D     ├──────!S─┐          │
+/// │     v         │          │
+/// {Bouncing_U_U}─U┴─S[U]─────┘
+///  ```
+///
+///  Interestingly, the state diagram is rotationally semetric, leading to a
+///  simplified state diagram:
+///
+///  ```text
+///  text on arrows is input
+///  [] surround output events
+///  {} surround states
+///  N - A key press or release
+///  !N - The other kind of key press or release
+///  S - stable timeout has been reached
+///  N=!N - swap the press/release state
+///
+/// ┌───────────S[N]─┬──N───{Bouncing_N_N}
+/// │               !S       ^   │
+/// │                └───────┤  !N
+/// ├──────────┐             N   │
+/// v          N             │   v
+/// {Stable_N}─┴─!N[!N]─┬─>{Bouncing_N_!N}
+/// ^                  !S    │
+/// └───────S,N=!N──────┴!N──┘
+/// ```
+///
+/// We could rename Bouncing_N_!N to BouncingNoEvent and BouncingEvent and go
+/// with that. Instead, I think of this as a single state with 2 arguments,
+/// corresponding to the most recent Stable state and the current state.
+/// After applying this trivial modification to the state diagram, the final
+/// state diagram emerges:
+///
+///  ```text
+///  text on arrows is input
+///  [] surround output events
+///  {} surround states
+///  (..) Argument(s) to a state
+///  N - A key press or release
+///  !N - The other kind of key press or release
+///  S - stable timeout has been reached
+///  N=!N - swap the press/release state
+///
+/// ┌───────────S[N]─┬──N───{Bouncing(N,N)*}
+/// │               !S       ^   │
+/// │                └───────┤  !N
+/// ├───────────┐            N   │
+/// v           N            │   v
+/// {Stable(N)}─┴─!N[!N]─┬─>{Bouncing(N,!N)*}
+/// ^                   !S   │
+/// └───────S,N=!N───────┴!N─┘
+/// ```
+///
+/// *: Note  that these states are the same state with different arguments
+///
+/// In all of these diagrams actually take an additional argument t, which,
+/// when compared with the current timestamp, will decide between S and !S.
+/// Since S and !S is not used in the transitions out of Stable, the argument
+/// t is not stored in that state.
+///
+/// For ease of implementatio, I have given the arguments to the Bouncing state
+/// names. Since Stable only has one arugemnt, it's pretty clear how it should
+/// be used.
+#[derive(Clone, Copy)]
+pub enum QuickDraw {
+    /// The key is stable at the contained state
+    Stable(bool),
+    /// The key is bouncing
+    Bouncing {
+        /// The stable state from before the bouncing began
+        prior: bool,
+        /// The most recent state that we observed
+        current: bool,
+        /// The time that we observed the current state
+        since: u32,
+    },
+}
+
+impl Default for QuickDraw {
+    fn default() -> Self {
+        QuickDraw::Stable(false)
+    }
+}
+
+impl QuickDraw {
+    pub fn build_array() -> [[Self; 8]; 6] {
+        [[Self::default(); 8]; 6]
+    }
+
+    /// Step the state machine
+    ///
+    /// The state machine progresses as described  in the struct documentation.
+    pub fn step(&mut self, state: bool, now: u32, stable_time: u32) -> Option<bool> {
+        let (next_state, event) = match self {
+            QuickDraw::Stable(prior) => {
+                if state != *prior {
+                    (
+                        QuickDraw::Bouncing {
+                            prior: *prior,
+                            current: state,
+                            since: now,
+                        },
+                        Some(state),
+                    )
+                } else {
+                    (self.clone(), None)
+                }
+            }
+            QuickDraw::Bouncing {
+                prior,
+                current,
+                since,
+            } => {
+                if state != *current {
+                    // a bounce happened in the bouncing state so we reset out
+                    // time stamp and  record the new state as the current
+                    // state.
+                    //
+                    // In the state diagram, this is the 4 transitions between
+                    //  the bouncing states.
+                    (
+                        QuickDraw::Bouncing {
+                            prior: *prior,
+                            current: state,
+                            since: now,
+                        },
+                        None,
+                    )
+                } else if now.wrapping_sub(*since) < stable_time {
+                    // no bounce happened, and we are not yet stable. Nothing
+                    // happens here.
+                    //
+                    // This is the 4 self-transitions of the bouncing states in
+                    // the state diagram.
+                    (self.clone(), None)
+                } else {
+                    // We have hit or exceeded the stable_time and no bouncing
+                    // happened.
+                    //
+                    // This corresponds to the transitions marked with an (S).
+                    //
+                    // Confusingly, we emit an event when we stablize to the
+                    // save value that we had before the bouncing began.
+                    //
+                    // This actually makes sense though, as it implies that
+                    // the switch bounced the whole time it was pressed.
+                    let event = if prior == current {
+                        Some(*current)
+                    } else {
+                        None
+                    };
+                    (QuickDraw::Stable(*current), event)
+                }
+            }
+        };
+        *self = next_state;
+        event
+    }
+}

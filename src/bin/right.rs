@@ -1,10 +1,7 @@
 #![no_main]
 #![no_std]
-use generic_array::typenum::{U6, U8};
-use keyberon::debounce::Debouncer;
 use keyberon::key_code::KbHidReport;
 use keyberon::layout::{Event, Layout};
-use keyberon::matrix::PressedKeys;
 use packed_struct::prelude::*;
 use panic_halt as _;
 use rtic::app;
@@ -15,7 +12,9 @@ use stm32f1xx_hal::usb::{Peripheral, UsbBus, UsbBusType};
 use usb_device::bus::UsbBusAllocator;
 use usb_device::class::UsbClass as _;
 
-use dmote_fw::{dma_key_scan, keys_from_scan, Cols, KeyEvent, Matrix, Rows, PHONE_LINE_BAUD};
+use dmote_fw::{
+    dma_key_scan, keys_from_scan, Cols, KeyEvent, Matrix, QuickDraw, Rows, PHONE_LINE_BAUD,
+};
 
 // NOTE: () is used in place of LEDs, as we don't care about them right now
 /// Type alias for a keyboard with no LEDs.
@@ -25,17 +24,29 @@ type UsbDevice = usb_device::device::UsbDevice<'static, UsbBusType>;
 
 /// Mapping from switch positions to keys symbols; 'a', '1', '$', etc.
 #[rustfmt::skip]
-pub static LAYOUT: keyberon::layout::Layers = keyberon::layout::layout!{{
+pub static LAYOUT: keyberon::layout::Layers = keyberon::layout::layout!{
+{
     [_      _      2       3      4      5      6      7      8       9      _      _     ]
     [=      1      W       E      R      T      Y      U      I       O      0      -     ]
     [Tab    Q      S       D      F      G      H      J      K       L      P      '\\'  ]
     [Escape A      X       C      V      B      N      M      ,       .      ;      Quote ]
     [LShift Z  NonUsBslash Left   Right  _      _      Up     Down    '['    /      RShift]
     [_      _      _       '`'    LShift LCtrl  RCtrl  BSpace ']'     _      _      _     ]
-    [_      _      _       Escape Space  LAlt   RAlt   Enter  Escape  _      _      _     ]
+    [_      _      _       (1)    Space  LAlt   RAlt   Enter  Escape  _      _      _     ]
     [_      _      _       Pause  End    Home   PgUp   PgDown PScreen _      _      _     ]
 // NOTE: this keyboard is in two halfs and this ^ is the first column of the right half
-}};
+}
+{
+    [_      _      _       _      _      _      _      _      _       _      _      _     ]
+    [_      _      _       _      _      _      _      Kp7    Kp8     Kp9    _      _     ]
+    [_      _      _       _      _      _      _      Kp4    Kp5     Kp6    _      _     ]
+    [_      _      _       _      _      _      _      Kp1    Kp2     Kp3    _      _     ]
+    [_      _      _       _      _      _      _      Kp0    KpEqual KpDot  _      _     ]
+    [_      _      _       _      _      _      _      _      _       _      _      _     ]
+    [_      _      _       _      _      _      _      _      _       _      _      _     ]
+    [_      _      _       _      _      _      _      _      _       _      _      _     ]
+}
+};
 
 /// Poll usb device. Called from within USB rx and tx interrupts
 pub fn usb_poll(usb_dev: &mut UsbDevice, keyboard: &mut UsbClass) {
@@ -46,7 +57,9 @@ pub fn usb_poll(usb_dev: &mut UsbDevice, keyboard: &mut UsbClass) {
 /// Resources to build a keyboard
 pub struct Keyboard {
     pub layout: Layout,
-    pub debouncer: Debouncer<PressedKeys<U8, U6>>,
+    pub debouncer: [[QuickDraw; 8]; 6],
+    pub now: u32,
+    pub timeout: u32,
 }
 
 #[app(device = stm32f1xx_hal::pac, peripherals = true)]
@@ -72,8 +85,9 @@ mod app {
 
         let mut flash = c.device.FLASH.constrain();
         let mut rcc = c.device.RCC.constrain();
-        let debouncer = Debouncer::new(PressedKeys::default(), PressedKeys::default(), 25);
+        let debouncer = QuickDraw::build_array();
         let layout = Layout::new(LAYOUT);
+        let scan_freq = 5.khz();
 
         let clocks = rcc
             .cfgr
@@ -152,7 +166,7 @@ mod app {
         );
 
         let (dma, scanout) = dma_key_scan(
-            5.khz(),
+            scan_freq,
             Matrix { rows, cols },
             c.device.DMA1,
             c.device.TIM1,
@@ -170,7 +184,7 @@ mod app {
                 dma,
                 scanout,
                 rx,
-                keyboard: Keyboard { debouncer, layout },
+                keyboard: Keyboard { debouncer, layout, now: 0, timeout: 25 },
             },
             init::Monotonics(),
         )
@@ -228,14 +242,12 @@ mod app {
             dma,
             scanout,
         } = c.resources;
-        let half = dma.5.isr().htif4().bits();
+        let half: usize = if dma.5.isr().htif4().bits() { 0 } else { 1 };
         // Clear all pending interrupts, irrespective of type
         dma.5.ifcr().write(|w| w.cgif4().clear());
-
-        let events = keys_from_scan(&scanout[if half { 0 } else { 1 }]);
-
-        let report: KbHidReport = keyboard.lock(|Keyboard { layout, debouncer }| {
-            for event in debouncer.events(events) {
+        let report: KbHidReport = keyboard.lock(|Keyboard { layout, debouncer, now, timeout}| {
+            *now = now.wrapping_add(1);
+            for event in keys_from_scan(&scanout[half], debouncer, *now, *timeout) {
                 layout.event(event.transform(|r, c| (r, c + 6)));
             }
             layout.keycodes().collect()

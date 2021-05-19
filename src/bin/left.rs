@@ -1,10 +1,7 @@
 #![no_main]
 #![no_std]
-use nb::block;
-use generic_array::typenum::{U6, U8};
-use keyberon::debounce::Debouncer;
 use keyberon::layout::Event;
-use keyberon::matrix::PressedKeys;
+use nb::block;
 use packed_struct::prelude::*;
 use panic_halt as _;
 use rtic::app;
@@ -12,12 +9,16 @@ use stm32f1xx_hal::prelude::*;
 use stm32f1xx_hal::serial::Tx;
 use stm32f1xx_hal::{dma, pac};
 
-use dmote_fw::{dma_key_scan, keys_from_scan, Cols, KeyEvent, Matrix, Rows, PHONE_LINE_BAUD};
+use dmote_fw::{
+    dma_key_scan, keys_from_scan, Cols, KeyEvent, Matrix, QuickDraw, Rows, PHONE_LINE_BAUD,
+};
 
 /// Resources to build a keyboard
 pub struct Keyboard {
     pub tx: Tx<pac::USART3>,
-    pub debouncer: Debouncer<PressedKeys<U8, U6>>,
+    pub debouncer: [[QuickDraw; 8]; 6],
+    pub now: u32,
+    pub timeout: u32,
 }
 
 #[app(device = stm32f1xx_hal::pac, peripherals = true)]
@@ -37,7 +38,7 @@ mod app {
     fn init(c: init::Context) -> (init::LateResources, init::Monotonics) {
         let mut flash = c.device.FLASH.constrain();
         let mut rcc = c.device.RCC.constrain();
-        let debouncer = Debouncer::new(PressedKeys::default(), PressedKeys::default(), 25);
+        let debouncer = QuickDraw::build_array();
 
         let clocks = rcc
             .cfgr
@@ -99,7 +100,12 @@ mod app {
             init::LateResources {
                 dma,
                 scanout,
-                keyboard: Keyboard { debouncer, tx },
+                keyboard: Keyboard {
+                    debouncer,
+                    tx,
+                    now: 0,
+                    timeout: 25,
+                },
             },
             init::Monotonics(),
         )
@@ -112,54 +118,60 @@ mod app {
             dma,
             scanout,
         } = c.resources;
-        let half = dma.5.isr().htif4().bits();
+        let half = if dma.5.isr().htif4().bits() { 0 } else { 1 };
         // Clear all pending interrupts, irrespective of type
         dma.5.ifcr().write(|w| w.cgif4().clear());
-        let events = keys_from_scan(&scanout[if half { 0 } else { 1 }]);
-
-        keyboard.lock(|Keyboard { tx, debouncer }| {
-            for event in debouncer.events(events) {
-                let kevent = match event {
-                    Event::Press(row, col) => KeyEvent {
-                        brk: false,
-                        row: row.into(),
-                        col: col.into(),
-                    },
-                    Event::Release(row, col) => KeyEvent {
-                        brk: true,
-                        row: row.into(),
-                        col: col.into(),
-                    },
-                };
-                let packed: [u8; 1] = match kevent.pack() {
-                    Ok(p) => p,
-                    Err(_e) => panic!(),
-                };
-                //NOTE: Despite the call to block here, this is real time. when
-                // fewer than 3 keys are pressed within 200us, on this half of
-                // the keyboard, we can transmit them all before the next
-                // interrupt, but just barely. transmitting 2 press/release
-                // events takes about 174us at the selected baud rate, 115_200
-                // bps.
-                //
-                // Luckliy, we interleave packing and sending, so really we
-                // have to acomplish debouncing in 27us to meet this deadline.
-                // This allows us 1900 cycles worth of time to leave the prior
-                // interrupt, enter this interrupt, debounce and start
-                // transmitting. That's a pretty tight deadline.
-                //
-                // The prior `unwrap` probably only failed when you hit two keys
-                // in the same 200us window, which was  pretty unlikely, but not
-                // impossible to do during normal typing. I'm okay with a slight
-                // delay if you manage to do that.   Especially considering that
-                // the debouncer adds another 5ms of latency.
-                match block!(tx.write(packed[0])) {
-                    Ok(_) => (),
-                    // NOTE: This is of  the type `Infallible`, so it's
-                    // actually impossible to hit
-                    Err(_) => unreachable!()
+        keyboard.lock(
+            |Keyboard {
+                 tx,
+                 debouncer,
+                 now,
+                 timeout,
+             }| {
+                *now += 1;
+                for event in keys_from_scan(&scanout[half], debouncer, *now, *timeout) {
+                    let kevent = match event {
+                        Event::Press(row, col) => KeyEvent {
+                            brk: false,
+                            row: row.into(),
+                            col: col.into(),
+                        },
+                        Event::Release(row, col) => KeyEvent {
+                            brk: true,
+                            row: row.into(),
+                            col: col.into(),
+                        },
+                    };
+                    let packed: [u8; 1] = match kevent.pack() {
+                        Ok(p) => p,
+                        Err(_e) => panic!(),
+                    };
+                    //NOTE: Despite the call to block here, this is real time. when
+                    // fewer than 3 keys are pressed within 200us, on this half of
+                    // the keyboard, we can transmit them all before the next
+                    // interrupt, but just barely. transmitting 2 press/release
+                    // events takes about 174us at the selected baud rate, 115_200
+                    // bps.
+                    //
+                    // Luckliy, we interleave packing and sending, so really we
+                    // have to acomplish debouncing in 27us to meet this deadline.
+                    // This allows us 1900 cycles worth of time to leave the prior
+                    // interrupt, enter this interrupt, debounce and start
+                    // transmitting. That's a pretty tight deadline.
+                    //
+                    // The prior `unwrap` probably only failed when you hit two keys
+                    // in the same 200us window, which was  pretty unlikely, but not
+                    // impossible to do during normal typing. I'm okay with a slight
+                    // delay if you manage to do that.   Especially considering that
+                    // the debouncer adds another 5ms of latency.
+                    match block!(tx.write(packed[0])) {
+                        Ok(_) => (),
+                        // NOTE: This is of  the type `Infallible`, so it's
+                        // actually impossible to hit
+                        Err(_) => unreachable!(),
+                    }
                 }
-            }
-        });
+            },
+        );
     }
 }
