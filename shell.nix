@@ -47,7 +47,7 @@ let
         description = "Modify vendor-supplied, often buggy SVD files.";
       };
     };
-  svd2rustpkg = { stdenv, fetchFromGitHub, rustPlatform }:
+  svd2rustpkg = { stdenv, lib, fetchFromGitHub, rustPlatform }:
     with rustPlatform; buildRustPackage rec {
       pname = "svd2rust";
       version = "0.18.0";
@@ -65,7 +65,7 @@ let
       # doc tests fail due to missing dependency
       doCheck = false;
 
-      meta = with stdenv.lib; {
+      meta = with lib; {
         description = "Generate Rust register maps (`struct`s) from SVD files";
         homepage = "https://github.com/rust-embedded/svd2rust";
         license = with licenses; [ mit asl20 ];
