@@ -31,11 +31,11 @@ pub type Class<'a, B, L> = hid::HidClass<'a, B, keyboard::Keyboard<L>>;
 
 /// USB VIP for a generic keyboard from
 /// https://github.com/obdev/v-usb/blob/master/usbdrv/USB-IDs-for-free.txt
-const VID: u16 = 0x16c0;
+const VID: u16 = 0x1209;
 
 /// USB PID for a generic keyboard from
 /// https://github.com/obdev/v-usb/blob/master/usbdrv/USB-IDs-for-free.txt
-const PID: u16 = 0x27db;
+const PID: u16 = 0x345c;
 
 /// Constructor for `Class`.
 pub fn new_class<B, L>(bus: &UsbBusAllocator<B>, leds: L) -> Class<'_, B, L>
