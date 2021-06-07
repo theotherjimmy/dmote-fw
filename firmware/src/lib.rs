@@ -292,9 +292,10 @@ pub fn dma_key_scan(
     (dma, &*scanout)
 }
 
-pub struct KeyScanIter<'a> {
-    scanout_half: &'a [u8; 6],
-    triggers: &'a mut [[QuickDraw; 8]; 6],
+/// An iterator through events produced by a keys scan
+pub struct KeyScanIter<'a, const R: usize, const C: usize> {
+    scanout_half: &'a [u8; C],
+    triggers: &'a mut [[QuickDraw; R]; C],
     now: u32,
     stable_timeout: u32,
     row: usize,
@@ -302,17 +303,17 @@ pub struct KeyScanIter<'a> {
     row_val: u8,
 }
 
-impl<'a> Iterator for KeyScanIter<'a> {
+impl<'a, const R: usize, const C: usize> Iterator for KeyScanIter<'a, R, C> {
     type Item = Event;
     fn next(&mut self) -> Option<Self::Item> {
-        while self.col < 6 {
+        while self.col < C {
             if self.row == 0 {
                 // Unsafe here is perfectly safe, as we're reading a reference as volatile.
                 // It is, however, necessary, as this will change from beneath us when it's
                 // populated by the DMA scan.
                 self.row_val = unsafe {core::ptr::read_volatile(&self.scanout_half[self.col])};
             }
-            while self.row < 8 {
+            while self.row < R {
                 let press = (self.row_val & (1 << self.row)) != 0;
                 let trigger_row = &mut self.triggers[self.col];
                 let to_ret = trigger_row[self.row]
@@ -339,9 +340,9 @@ impl<'a> Iterator for KeyScanIter<'a> {
 
 /// Convenience function that accepts a scanout and produces a sequence of
 /// triggered from the scanout_half produced by DMA
-pub fn keys_from_scan<'a>(
-    scanout_half: &'a [u8; 6],
-    triggers: &'a mut [[QuickDraw; 8]; 6],
+pub fn keys_from_scan<'a, const R: usize, const C: usize>(
+    scanout_half: &'a [u8; C],
+    triggers: &'a mut [[QuickDraw; R]; C],
     now: u32,
     stable_timeout: u32,
 ) -> impl Iterator<Item=Event> + 'a {
