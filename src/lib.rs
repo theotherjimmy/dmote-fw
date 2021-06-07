@@ -372,10 +372,37 @@ pub const PHONE_LINE_BAUD: u32 = 115_200;
 
 /// A quick draw style switch Schmitt trigger.
 ///
+/// "Debouncing" is the act of converting a noisy signal into a noiseless
+/// Schmitt trigger. Usually, this looks something like:
+/// ```text
+///                        __      ___________________________
+/// Signal  ______________/  \/\/\/
+///                       |           ________________________
+/// Trigger _________________________/
+///                       | debounce |
+///                       |  period  |
+///                       |  5-10ms  |
+/// ```
+///
+/// Notice that this introduces a latency that corresponds to the period used
+/// as an implementation detail of the trigger logic, typically in the range
+/// of 5 to 10 milliseconds.
+///
+/// Idealy, We would want a Schmitt trigger that looked something like:
+/// ```text
+///                        __      ___________________________
+/// Signal  ______________/  \/\/\/
+///                        ___________________________________
+/// Trigger ______________/
+/// ```
+///
+/// That is, a Schmitt trigger with no delay between the start of the key press
+/// and the resulting noiseless "triger" signal.
+///
 /// This debouncer is designed for minimum latency, and not much else.
 ///
 /// The idea is that we say that a change is reported _before_ debouncing.
-/// That means that we end a press/release event the moment it changes state,
+/// That means that we send a press/release event the moment it changes state,
 /// and afterwards we ensure that we don't send any of the bounces until we're
 /// confident that the key has stabilized.
 ///
@@ -464,7 +491,7 @@ pub const PHONE_LINE_BAUD: u32 = 115_200;
 /// Since S and !S is not used in the transitions out of Stable, the argument
 /// t is not stored in that state.
 ///
-/// For ease of implementatio, I have given the arguments to the Bouncing state
+/// For ease of implementation, I have given the arguments to the Bouncing state
 /// names. Since Stable only has one arugemnt, it's pretty clear how it should
 /// be used.
 #[derive(Clone, Copy)]
@@ -546,7 +573,7 @@ impl QuickDraw {
                     // This corresponds to the transitions marked with an (S).
                     //
                     // Confusingly, we emit an event when we stablize to the
-                    // save value that we had before the bouncing began.
+                    // same value that we had before the bouncing began.
                     //
                     // This actually makes sense though, as it implies that
                     // the switch bounced the whole time it was pressed.
