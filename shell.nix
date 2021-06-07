@@ -5,7 +5,7 @@ let
     channel = "nightly";
     date = "2021-04-19";
   }).rust.override {
-    targets = ["thumbv7m-none-eabi"];
+    targets = [ "thumbv7m-none-eabi" "x86_64-unknown-linux-gnu" ];
     extensions = ["rust-src"];
   };
   formpkg = { stdenv, fetchFromGitHub, rustPlatform }:
