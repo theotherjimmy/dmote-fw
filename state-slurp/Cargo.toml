@@ -1,0 +1,7 @@
+[package]
+name = "state-slurp"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+probe-rs = "0.10.0"
