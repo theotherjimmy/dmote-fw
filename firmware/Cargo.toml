@@ -13,6 +13,10 @@ usb-device = "0.2.8"
 panic-halt = "0.2"
 nb = "1.0"
 
+[dependencies.shared-types]
+version = "0.1.0"
+path = "../shared-types/"
+
 [dependencies.keyberon]
 version = "0.2.0"
 path = "keyberon"

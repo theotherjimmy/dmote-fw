@@ -10,7 +10,7 @@ use stm32f1xx_hal::serial::Tx;
 use stm32f1xx_hal::{dma, pac};
 
 use dmote_fw::{
-    dma_key_scan, keys_from_scan, Cols, KeyEvent, Matrix, QuickDraw, Rows, PHONE_LINE_BAUD,
+    dma_key_scan, keys_from_scan, Cols, KeyEvent, Log, Matrix, QuickDraw, Rows, PHONE_LINE_BAUD,
 };
 
 /// Resources to build a keyboard
@@ -19,6 +19,7 @@ pub struct Keyboard {
     pub debouncer: [[QuickDraw; 8]; 6],
     pub now: u32,
     pub timeout: u32,
+    pub log: &'static mut Log,
 }
 
 #[app(device = stm32f1xx_hal::pac, peripherals = true)]
@@ -105,6 +106,7 @@ mod app {
                     tx,
                     now: 0,
                     timeout: 25,
+                    log: Log::get(),
                 },
             },
             init::Monotonics(),
@@ -127,9 +129,10 @@ mod app {
                  debouncer,
                  now,
                  timeout,
+                 log,
              }| {
                 *now += 1;
-                for event in keys_from_scan(&scanout[half], debouncer, *now, *timeout) {
+                for event in keys_from_scan(&scanout[half], debouncer, log, *now, *timeout) {
                     let kevent = match event {
                         Event::Press(row, col) => KeyEvent {
                             brk: false,

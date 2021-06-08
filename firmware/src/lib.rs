@@ -1,4 +1,5 @@
 #![no_std]
+use core::sync::atomic::{AtomicBool, Ordering};
 use cortex_m::singleton;
 use keyberon::layout::Event;
 use packed_struct::prelude::*;
@@ -12,6 +13,8 @@ use stm32f1xx_hal::prelude::*;
 use stm32f1xx_hal::rcc::{Clocks, Enable, GetBusFreq, Reset, AHB, APB2};
 use stm32f1xx_hal::time::Hertz;
 use stm32f1xx_hal::{dma, pac};
+
+use shared_types::{DebState, KeyState, PressRelease};
 
 /// The KeyEvent struct is a packed representation of a key event that is
 /// sent over the phone line.
@@ -39,7 +42,7 @@ fn compute_arr_presc(freq: u32, clock: u32) -> (u16, u16) {
 
 /// Columns of the keyboard matrix
 ///
-/// Pin| Left Half wiring                    | Right half wiring
+/// Pin| Left Half wiring                  | Right half wiring
 /// ---|-----------------------------------|-----------------------------------
 /// PB3| Pinky col - 1                     | Pointer col + 1 & Thumb col +1
 /// PB4| Pinky home col                    | Ponter Home col & Thumb Home col
@@ -292,10 +295,60 @@ pub fn dma_key_scan(
     (dma, &*scanout)
 }
 
+const LOG_SIZE: usize = 1024;
+
+
+/// A log structure that's accessable by the debugger
+///
+/// It's actually a circular buffer that writes over itself when full. The hope
+/// is that a debugger, or the state-slurp program will be able to keep up with
+/// the pace of adding events. A debugger can read 3200 records at full spead,
+/// when it's doing nothing else, so it should be able to reasonably keep up
+/// with something like 500 events/second, which would be quite a few events.
+/// Further, if the debugger falls behind, it would have to fall behind by the
+/// size of the log, 1024, in order to actually loose data. If the debugger
+/// is unable to keep up, but then there is a lul in activity, it should be
+/// possible for the debugger to catch up eventually.
+///
+pub struct Log {
+    /// Location of the next b
+    head: usize,
+    body: [KeyState; LOG_SIZE],
+}
+
+
+static mut THELOG: Log = Log { head: 0, body: [KeyState {
+    timestamp: 0,
+    col: 0,
+    row: 0,
+    deb: DebState::StableU,
+    event: PressRelease::None,
+}; LOG_SIZE] };
+impl Log {
+    pub fn log(&mut self, elem: KeyState) {
+        self.body[self.head] = elem;
+        self.head += 1;
+        self.head %= LOG_SIZE;
+    }
+
+    /// Return the log singleton. Panics if called twice
+    pub fn get() -> &'static mut Self {
+        // NOTE: This is a manual implementation of the singleton macro so that the
+        // names are more predictable
+        static TAKEN: AtomicBool = AtomicBool::new(false);
+        if TAKEN.swap(true, Ordering::AcqRel) {
+            // The aforementioned panic when called twice
+            panic!();
+        }
+        unsafe { &mut THELOG }
+    }
+}
+
 /// An iterator through events produced by a keys scan
 pub struct KeyScanIter<'a, const R: usize, const C: usize> {
     scanout_half: &'a [u8; C],
     triggers: &'a mut [[QuickDraw; R]; C],
+    log: &'a mut Log,
     now: u32,
     stable_timeout: u32,
     row: usize,
@@ -316,6 +369,7 @@ impl<'a, const R: usize, const C: usize> Iterator for KeyScanIter<'a, R, C> {
             while self.row < R {
                 let press = (self.row_val & (1 << self.row)) != 0;
                 let trigger_row = &mut self.triggers[self.col];
+                let old: QuickDraw = trigger_row[self.row].clone();
                 let to_ret = trigger_row[self.row]
                     .step(press, self.now, self.stable_timeout)
                     .map(|e| {
@@ -325,6 +379,20 @@ impl<'a, const R: usize, const C: usize> Iterator for KeyScanIter<'a, R, C> {
                             Event::Release(self.row as u8, self.col as u8)
                         }
                     });
+                let new = &self.triggers[self.col][self.row];
+                if to_ret.is_some() || *new != old {
+                    self.log.log(KeyState {
+                        timestamp: self.now,
+                        row: self.row as u8,
+                        col: self.col as u8,
+                        deb: new.state_name(),
+                        event: match &to_ret {
+                            Some(Event::Press(..))   => PressRelease::Press,
+                            Some(Event::Release(..)) => PressRelease::Release,
+                            None                     => PressRelease::None
+                        }
+                    });
+                }
                 self.row += 1;
                 if to_ret.is_some() {
                     return to_ret;
@@ -343,6 +411,7 @@ impl<'a, const R: usize, const C: usize> Iterator for KeyScanIter<'a, R, C> {
 pub fn keys_from_scan<'a, const R: usize, const C: usize>(
     scanout_half: &'a [u8; C],
     triggers: &'a mut [[QuickDraw; R]; C],
+    log: &'a mut Log,
     now: u32,
     stable_timeout: u32,
 ) -> impl Iterator<Item=Event> + 'a {
@@ -351,6 +420,7 @@ pub fn keys_from_scan<'a, const R: usize, const C: usize>(
         triggers,
         now,
         stable_timeout,
+        log,
         row: 0,
         col: 0,
         row_val: 0,
@@ -495,7 +565,7 @@ pub const PHONE_LINE_BAUD: u32 = 115_200;
 /// For ease of implementation, I have given the arguments to the Bouncing state
 /// names. Since Stable only has one arugemnt, it's pretty clear how it should
 /// be used.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum QuickDraw {
     /// The key is stable at the contained state
     Stable(bool),
@@ -519,6 +589,18 @@ impl Default for QuickDraw {
 impl QuickDraw {
     pub fn build_array() -> [[Self; 8]; 6] {
         [[Self::default(); 8]; 6]
+    }
+
+    pub fn state_name(&self) -> DebState {
+        use DebState::*;
+        match self {
+            Self::Stable(true) => StableD,
+            Self::Stable(false) => StableU,
+            Self::Bouncing{ prior: true, current: true, ..} => BouncingDD,
+            Self::Bouncing{ prior: true, current: false, ..} => BouncingDU,
+            Self::Bouncing{ prior: false, current: false, ..} => BouncingUU,
+            Self::Bouncing{ prior: false, current: true, ..} => BouncingUD,
+        }
     }
 
     /// Step the state machine

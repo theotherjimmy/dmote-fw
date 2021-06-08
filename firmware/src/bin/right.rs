@@ -7,13 +7,13 @@ use panic_halt as _;
 use rtic::app;
 use stm32f1xx_hal::dma;
 use stm32f1xx_hal::prelude::*;
-use stm32f1xx_hal::serial::Rx;
+use stm32f1xx_hal::serial::{Rx, Error as SError};
 use stm32f1xx_hal::usb::{Peripheral, UsbBus, UsbBusType};
 use usb_device::bus::UsbBusAllocator;
 use usb_device::class::UsbClass as _;
 
 use dmote_fw::{
-    dma_key_scan, keys_from_scan, Cols, KeyEvent, Matrix, QuickDraw, Rows, PHONE_LINE_BAUD,
+    dma_key_scan, keys_from_scan, Cols, KeyEvent, Log, Matrix, QuickDraw, Rows, PHONE_LINE_BAUD,
 };
 
 // NOTE: () is used in place of LEDs, as we don't care about them right now
@@ -60,6 +60,7 @@ pub struct Keyboard {
     pub debouncer: [[QuickDraw; 8]; 6],
     pub now: u32,
     pub timeout: u32,
+    pub log: &'static mut Log,
 }
 
 #[app(device = stm32f1xx_hal::pac, peripherals = true)]
@@ -177,6 +178,8 @@ mod app {
 
         rx.listen();
 
+        let log = Log::get();
+
         (
             init::LateResources {
                 usb_dev,
@@ -184,7 +187,7 @@ mod app {
                 dma,
                 scanout,
                 rx,
-                keyboard: Keyboard { debouncer, layout, now: 0, timeout: 25 },
+                keyboard: Keyboard { debouncer, layout, log, now: 0, timeout: 25 },
             },
             init::Monotonics(),
         )
@@ -228,7 +231,14 @@ mod app {
                     .keyboard
                     .lock(|Keyboard { layout, .. }| layout.event(event));
             }
-            Err(e) => panic!("{:?}", e),
+            Err(nb::Error::Other(SError::Framing)) => panic!("a"),
+            Err(nb::Error::Other(SError::Noise)) => panic!("b"),
+            Err(nb::Error::Other(SError::Overrun)) => panic!("c"),
+            Err(nb::Error::Other(SError::Parity)) => panic!("d"),
+            Err(nb::Error::Other(_)) => panic!("e"),
+            // Unlike the other cases, this one simply implies that we got
+            // a spurious interrupt.
+            Err(nb::Error::WouldBlock) => (),
         }
     }
 
@@ -245,9 +255,9 @@ mod app {
         let half: usize = if dma.5.isr().htif4().bits() { 0 } else { 1 };
         // Clear all pending interrupts, irrespective of type
         dma.5.ifcr().write(|w| w.cgif4().clear());
-        let report: KbHidReport = keyboard.lock(|Keyboard { layout, debouncer, now, timeout}| {
+        let report: KbHidReport = keyboard.lock(|Keyboard { layout, log, debouncer, now, timeout}| {
             *now = now.wrapping_add(1);
-            for event in keys_from_scan(&scanout[half], debouncer, *now, *timeout) {
+            for event in keys_from_scan(&scanout[half], debouncer, log, *now, *timeout) {
                 layout.event(event.transform(|r, c| (r, c + 6)));
             }
             layout.keycodes().collect()
