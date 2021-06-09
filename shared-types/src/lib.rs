@@ -2,20 +2,20 @@
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(u8)]
 pub enum DebState {
-    StableD,
-    BouncingDD,
-    BouncingDU,
     StableU,
     BouncingUD,
     BouncingUU,
+    StableD,
+    BouncingDD,
+    BouncingDU,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 #[repr(u8)]
 pub enum PressRelease {
+    None,
     Press,
     Release,
-    None,
 }
 
 /// A packed representation of any debounce event used for observing the state
@@ -33,4 +33,16 @@ pub struct KeyState {
     pub deb: DebState,
     /// The event that was produced, if any
     pub event: PressRelease,
+}
+
+impl Default for KeyState {
+    fn default() -> Self {
+        Self {
+            timestamp: 0,
+            row: 0,
+            col: 0,
+            deb: DebState::StableU,
+            event: PressRelease::None,
+        }
+    }
 }

@@ -5,3 +5,8 @@ edition = "2018"
 
 [dependencies]
 probe-rs = "0.10.0"
+ddbug_parser = "0.3.0"
+
+[dependencies.shared-types]
+version = "*"
+path = "../shared-types"

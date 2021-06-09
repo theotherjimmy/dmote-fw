@@ -105,7 +105,7 @@ mod app {
                     debouncer,
                     tx,
                     now: 0,
-                    timeout: 25,
+                    timeout: 75,
                     log: Log::get(),
                 },
             },

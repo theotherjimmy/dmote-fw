@@ -93,5 +93,8 @@ pkgs.mkShell {
     gdb-multitarget
     cargo-binutils
     cargo-bloat
+    # probe-rs deps
+    libusb
+    pkgconfig
   ];
 }

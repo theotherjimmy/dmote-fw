@@ -187,7 +187,7 @@ mod app {
                 dma,
                 scanout,
                 rx,
-                keyboard: Keyboard { debouncer, layout, log, now: 0, timeout: 25 },
+                keyboard: Keyboard { debouncer, layout, log, now: 0, timeout: 75 },
             },
             init::Monotonics(),
         )
