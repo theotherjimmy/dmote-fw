@@ -10,7 +10,7 @@ with a DAP42 probe attached.
 This firmware has some unusual features:
  * Scanning of the key matrix is done entirely with DMA, without any interaction
    with the firmware.
- * PLANNED: "Qick-Draw" debouncing, minimizing key press latency.
+ * "Qick-Draw" debouncing, minimizing key press latency.
 
 # Vendoring
 
@@ -24,5 +24,4 @@ keyberon      | Removal of unused features saves ~ 3KB on the firmware size
 
 Of them, I'm likely to un-vendor stm32f1 and stm32f1xx-hal when versions of them
 become available that meet my needs. However, I'll probably not be updating
-keyberon, as I'm probably going to be further reducing that library with the
-upcoming "Quick-Draw" debouncing.
+keyberon, as I use very little of that library "Quick-Draw" debouncing.
