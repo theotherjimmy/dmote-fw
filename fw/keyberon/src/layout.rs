@@ -47,7 +47,6 @@ pub use layout_macro::layout;
 
 use crate::action::Action;
 use crate::key_code::KeyCode;
-use heapless::consts::U64;
 use heapless::Vec;
 
 use State::*;
@@ -64,7 +63,7 @@ pub type Layers = &'static [&'static [&'static [Action]]];
 pub struct Layout {
     layers: Layers,
     default_layer: usize,
-    states: Vec<State, U64>,
+    states: Vec<State, 64>,
 }
 
 /// An event on the key matrix.

@@ -19,12 +19,10 @@ use usb_device::bus::UsbBusAllocator;
 use usb_device::prelude::*;
 
 pub mod action;
-pub mod debounce;
 pub mod hid;
 pub mod key_code;
 pub mod keyboard;
 pub mod layout;
-pub mod matrix;
 
 /// A handly shortcut for the keyberon USB class type.
 pub type Class<'a, B, L> = hid::HidClass<'a, B, keyboard::Keyboard<L>>;
