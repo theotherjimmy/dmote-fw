@@ -1,6 +1,6 @@
 #![no_main]
 #![no_std]
-use keyberon::layout::Event;
+use keyberon::layout::LogicalState;
 use nb::block;
 use packed_struct::prelude::*;
 use panic_halt as _;
@@ -133,17 +133,10 @@ mod app {
              }| {
                 *now += 1;
                 for event in keys_from_scan(&scanout[half], debouncer, log, *now, *timeout) {
-                    let kevent = match event {
-                        Event::Press(row, col) => KeyEvent {
-                            brk: false,
-                            row: row.into(),
-                            col: col.into(),
-                        },
-                        Event::Release(row, col) => KeyEvent {
-                            brk: true,
-                            row: row.into(),
-                            col: col.into(),
-                        },
+                    let kevent = KeyEvent{
+                        brk: event.state == LogicalState::Press,
+                        row: event.coord.0.into(),
+                        col: event.coord.1.into(),
                     };
                     let packed: [u8; 1] = match kevent.pack() {
                         Ok(p) => p,

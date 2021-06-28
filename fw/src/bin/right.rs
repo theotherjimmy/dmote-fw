@@ -1,7 +1,8 @@
 #![no_main]
 #![no_std]
 use keyberon::key_code::KbHidReport;
-use keyberon::layout::{Event, Layout};
+use keyberon::layout::{Event, Layout, LogicalState};
+use keyberon::key_code::KeyCode::*;
 use packed_struct::prelude::*;
 use panic_halt as _;
 use rtic::app;
@@ -22,31 +23,20 @@ type UsbClass = keyberon::Class<'static, UsbBusType, ()>;
 /// Type alias for usb devices.
 type UsbDevice = usb_device::device::UsbDevice<'static, UsbBusType>;
 
+
 /// Mapping from switch positions to keys symbols; 'a', '1', '$', etc.
 #[rustfmt::skip]
-pub static LAYOUT: keyberon::layout::Layers = keyberon::layout::layout!{
-{
-    [_      _      2       3      4      5      6      7      8       9      _      _     ]
-    [=      1      W       E      R      T      Y      U      I       O      0      -     ]
-    [Tab    Q      S       D      F      G      H      J      K       L      P      '\\'  ]
-    [Escape A      X       C      V      B      N      M      ,       .      ;      Quote ]
-    [LShift Z  NonUsBslash Left   Right  _      _      Up     Down    '['    /      RShift]
-    [_      _      _       '`'    LShift LCtrl  RCtrl  BSpace ']'     _      _      _     ]
-    [_      _      _       (1)    Space  LAlt   RAlt   Enter  Escape  _      _      _     ]
-    [_      _      _       Pause  End    Home   PgUp   PgDown PScreen _      _      _     ]
-// NOTE: this keyboard is in two halfs and this ^ is the first column of the right half
-}
-{
-    [_      _      _       _      _      _      _      _      _       _      _      _     ]
-    [_      _      _       _      _      _      _      Kp7    Kp8     Kp9    _      _     ]
-    [_      _      _       _      _      _      _      Kp4    Kp5     Kp6    _      _     ]
-    [_      _      _       _      _      _      _      Kp1    Kp2     Kp3    _      _     ]
-    [_      _      _       _      _      _      _      Kp0    KpEqual KpDot  _      _     ]
-    [_      _      _       _      _      _      _      _      _       _      _      _     ]
-    [_      _      _       _      _      _      _      _      _       _      _      _     ]
-    [_      _      _       _      _      _      _      _      _       _      _      _     ]
-}
-};
+pub static LAYOUT: keyberon::layout::Layers<12, 8> = [
+    [No,     No,  Kb2,         Kb3,    Kb4,    Kb5,   Kb6,   Kb7,    Kb8,      Kb9,       No,     No    ],
+    [Equal,  Kb1, W,           E,      R,      T,     Y,     U,      I,        O,         Kb0,    Minus ],
+    [Tab,    Q,   S,           D,      F,      G,     H,     J,      K,        L,         P,      Bslash],
+    [Escape, A,   X,           C,      V,      B,     N,     M,      Comma,    Dot,       SColon, Quote ],
+    [LShift, Z,   NonUsBslash, Left,   Right,  No,    No,    Up,     Down,     LBracket,  Slash,  RShift],
+    [No,     No,  No,          Grave,  LShift, LCtrl, RCtrl, BSpace, RBracket, No,        No,     No    ],
+    [No,     No,  No,          Escape, Space,  LAlt,  RAlt,  Enter,  Escape,   No,        No,     No    ],
+    [No,     No,  No,          Pause,  End,    Home,  PgUp,  PgDown, PScreen,  No,        No,     No    ]
+    // NOTE: this keyboard is in two halfs and this   ^ is the first column of the right half
+];
 
 /// Poll usb device. Called from within USB rx and tx interrupts
 pub fn usb_poll(usb_dev: &mut UsbDevice, keyboard: &mut UsbClass) {
@@ -56,7 +46,7 @@ pub fn usb_poll(usb_dev: &mut UsbDevice, keyboard: &mut UsbClass) {
 }
 /// Resources to build a keyboard
 pub struct Keyboard {
-    pub layout: Layout,
+    pub layout: Layout<12, 8>,
     pub debouncer: [[QuickDraw; 8]; 6],
     pub now: u32,
     pub timeout: u32,
@@ -222,11 +212,8 @@ mod app {
                 };
                 let row = row.into();
                 let col = col.into();
-                let event = if brk {
-                    Event::Release(row, col)
-                } else {
-                    Event::Press(row, col)
-                };
+                let state = if brk { LogicalState::Press } else { LogicalState::Release };
+                let event = Event { coord: (row, col), state };
                 c.resources
                     .keyboard
                     .lock(|Keyboard { layout, .. }| layout.event(event));
@@ -257,8 +244,9 @@ mod app {
         dma.5.ifcr().write(|w| w.cgif4().clear());
         let report: KbHidReport = keyboard.lock(|Keyboard { layout, log, debouncer, now, timeout}| {
             *now = now.wrapping_add(1);
-            for event in keys_from_scan(&scanout[half], debouncer, log, *now, *timeout) {
-                layout.event(event.transform(|r, c| (r, c + 6)));
+            for mut event in keys_from_scan(&scanout[half], debouncer, log, *now, *timeout) {
+                event.coord.1 += 6;
+                layout.event(event);
             }
             layout.keycodes().collect()
         });

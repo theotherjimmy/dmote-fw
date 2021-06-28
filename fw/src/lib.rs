@@ -1,7 +1,7 @@
 #![no_std]
 use core::sync::atomic::{AtomicBool, Ordering};
 use cortex_m::singleton;
-use keyberon::layout::Event;
+use keyberon::layout::{Event, LogicalState};
 use packed_struct::prelude::*;
 use stm32f1::stm32f103;
 use stm32f1xx_hal::gpio::{
@@ -372,12 +372,9 @@ impl<'a, const R: usize, const C: usize> Iterator for KeyScanIter<'a, R, C> {
                 let old: QuickDraw = trigger_row[self.row].clone();
                 let to_ret = trigger_row[self.row]
                     .step(press, self.now, self.stable_timeout)
-                    .map(|e| {
-                        if e {
-                            Event::Press(self.row as u8, self.col as u8)
-                        } else {
-                            Event::Release(self.row as u8, self.col as u8)
-                        }
+                    .map(|e| Event {
+                        coord: (self.row as u8, self.col as u8),
+                        state: if e { LogicalState::Press } else { LogicalState::Release }
                     });
                 let new = &self.triggers[self.col][self.row];
                 if to_ret.is_some() || *new != old {
@@ -387,9 +384,9 @@ impl<'a, const R: usize, const C: usize> Iterator for KeyScanIter<'a, R, C> {
                         col: self.col as u8,
                         deb: new.state_name(),
                         event: match &to_ret {
-                            Some(Event::Press(..))   => PressRelease::Press,
-                            Some(Event::Release(..)) => PressRelease::Release,
-                            None                     => PressRelease::None
+                            Some(Event{state: LogicalState::Press, ..})   => PressRelease::Press,
+                            Some(Event{state: LogicalState::Release, ..}) => PressRelease::Release,
+                            None                                          => PressRelease::None
                         }
                     });
                 }
