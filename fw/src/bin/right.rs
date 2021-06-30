@@ -47,9 +47,8 @@ pub fn usb_poll(usb_dev: &mut UsbDevice, keyboard: &mut UsbClass) {
 /// Resources to build a keyboard
 pub struct Keyboard {
     pub layout: Layout<12, 8>,
-    pub debouncer: [[QuickDraw; 8]; 6],
+    pub debouncer: [[QuickDraw<75>; 8]; 6],
     pub now: u32,
-    pub timeout: u32,
     pub log: &'static mut Log,
 }
 
@@ -177,7 +176,7 @@ mod app {
                 dma,
                 scanout,
                 rx,
-                keyboard: Keyboard { debouncer, layout, log, now: 0, timeout: 75 },
+                keyboard: Keyboard { debouncer, layout, log, now: 0},
             },
             init::Monotonics(),
         )
@@ -242,9 +241,9 @@ mod app {
         let half: usize = if dma.5.isr().htif4().bits() { 0 } else { 1 };
         // Clear all pending interrupts, irrespective of type
         dma.5.ifcr().write(|w| w.cgif4().clear());
-        let report: KbHidReport = keyboard.lock(|Keyboard { layout, log, debouncer, now, timeout}| {
+        let report: KbHidReport = keyboard.lock(|Keyboard { layout, log, debouncer, now}| {
             *now = now.wrapping_add(1);
-            for mut event in keys_from_scan(&scanout[half], debouncer, log, *now, *timeout) {
+            for mut event in keys_from_scan(&scanout[half], debouncer, log, *now) {
                 event.coord.1 += 6;
                 layout.event(event);
             }

@@ -345,18 +345,17 @@ impl Log {
 }
 
 /// An iterator through events produced by a keys scan
-pub struct KeyScanIter<'a, const R: usize, const C: usize> {
+pub struct KeyScanIter<'a, const R: usize, const C: usize, const T: u32> {
     scanout_half: &'a [u8; C],
-    triggers: &'a mut [[QuickDraw; R]; C],
+    triggers: &'a mut [[QuickDraw<T>; R]; C],
     log: &'a mut Log,
     now: u32,
-    stable_timeout: u32,
     row: usize,
     col: usize,
     row_val: u8,
 }
 
-impl<'a, const R: usize, const C: usize> Iterator for KeyScanIter<'a, R, C> {
+impl<'a, const R: usize, const C: usize, const T: u32> Iterator for KeyScanIter<'a, R, C, T> {
     type Item = Event;
     fn next(&mut self) -> Option<Self::Item> {
         while self.col < C {
@@ -369,9 +368,9 @@ impl<'a, const R: usize, const C: usize> Iterator for KeyScanIter<'a, R, C> {
             while self.row < R {
                 let press = (self.row_val & (1 << self.row)) != 0;
                 let trigger_row = &mut self.triggers[self.col];
-                let old: QuickDraw = trigger_row[self.row].clone();
+                let old: QuickDraw<T> = trigger_row[self.row].clone();
                 let to_ret = trigger_row[self.row]
-                    .step(press, self.now, self.stable_timeout)
+                    .step(press, self.now)
                     .map(|e| Event {
                         coord: (self.row as u8, self.col as u8),
                         state: if e { LogicalState::Press } else { LogicalState::Release }
@@ -405,18 +404,16 @@ impl<'a, const R: usize, const C: usize> Iterator for KeyScanIter<'a, R, C> {
 
 /// Convenience function that accepts a scanout and produces a sequence of
 /// triggered from the scanout_half produced by DMA
-pub fn keys_from_scan<'a, const R: usize, const C: usize>(
+pub fn keys_from_scan<'a, const R: usize, const C: usize, const T: u32>(
     scanout_half: &'a [u8; C],
-    triggers: &'a mut [[QuickDraw; R]; C],
+    triggers: &'a mut [[QuickDraw<T>; R]; C],
     log: &'a mut Log,
     now: u32,
-    stable_timeout: u32,
 ) -> impl Iterator<Item=Event> + 'a {
     KeyScanIter {
         scanout_half,
         triggers,
         now,
-        stable_timeout,
         log,
         row: 0,
         col: 0,
@@ -563,7 +560,7 @@ pub const PHONE_LINE_BAUD: u32 = 115_200;
 /// names. Since Stable only has one arugemnt, it's pretty clear how it should
 /// be used.
 #[derive(Clone, Copy, PartialEq)]
-pub enum QuickDraw {
+pub enum QuickDraw<const T: u32> {
     /// The key is stable at the contained state
     Stable(bool),
     /// The key is bouncing
@@ -577,13 +574,13 @@ pub enum QuickDraw {
     },
 }
 
-impl Default for QuickDraw {
+impl<const T: u32> Default for QuickDraw<T> {
     fn default() -> Self {
         QuickDraw::Stable(false)
     }
 }
 
-impl QuickDraw {
+impl<const T: u32> QuickDraw<T> {
     pub fn build_array() -> [[Self; 8]; 6] {
         [[Self::default(); 8]; 6]
     }
@@ -603,7 +600,7 @@ impl QuickDraw {
     /// Step the state machine
     ///
     /// The state machine progresses as described  in the struct documentation.
-    pub fn step(&mut self, state: bool, now: u32, stable_time: u32) -> Option<bool> {
+    pub fn step(&mut self, state: bool, now: u32) -> Option<bool> {
         let (next_state, event) = match self {
             QuickDraw::Stable(prior) => {
                 if state != *prior {
@@ -639,7 +636,7 @@ impl QuickDraw {
                         },
                         None,
                     )
-                } else if now.wrapping_sub(*since) < stable_time {
+                } else if now.wrapping_sub(*since) < T {
                     // no bounce happened, and we are not yet stable. Nothing
                     // happens here.
                     //

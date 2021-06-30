@@ -16,9 +16,8 @@ use dmote_fw::{
 /// Resources to build a keyboard
 pub struct Keyboard {
     pub tx: Tx<pac::USART3>,
-    pub debouncer: [[QuickDraw; 8]; 6],
+    pub debouncer: [[QuickDraw<75>; 8]; 6],
     pub now: u32,
-    pub timeout: u32,
     pub log: &'static mut Log,
 }
 
@@ -105,7 +104,6 @@ mod app {
                     debouncer,
                     tx,
                     now: 0,
-                    timeout: 75,
                     log: Log::get(),
                 },
             },
@@ -128,11 +126,10 @@ mod app {
                  tx,
                  debouncer,
                  now,
-                 timeout,
                  log,
              }| {
                 *now += 1;
-                for event in keys_from_scan(&scanout[half], debouncer, log, *now, *timeout) {
+                for event in keys_from_scan(&scanout[half], debouncer, log, *now) {
                     let kevent = KeyEvent{
                         brk: event.state == LogicalState::Press,
                         row: event.coord.0.into(),
