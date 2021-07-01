@@ -1,20 +1,19 @@
 #![no_main]
 #![no_std]
 use keyberon::key_code::KbHidReport;
-use keyberon::layout::{Event, Layout, LogicalState};
+use keyberon::layout::keycodes;
 use keyberon::key_code::KeyCode::*;
-use packed_struct::prelude::*;
 use panic_halt as _;
 use rtic::app;
 use stm32f1xx_hal::dma;
 use stm32f1xx_hal::prelude::*;
-use stm32f1xx_hal::serial::{Rx, Error as SError};
+use stm32f1xx_hal::serial::Rx;
 use stm32f1xx_hal::usb::{Peripheral, UsbBus, UsbBusType};
 use usb_device::bus::UsbBusAllocator;
 use usb_device::class::UsbClass as _;
 
 use dmote_fw::{
-    dma_key_scan, keys_from_scan, Cols, KeyEvent, Log, Matrix, QuickDraw, Rows, PHONE_LINE_BAUD,
+    dma_key_scan, keys_from_scan, Cols, Log, Matrix, QuickDraw, Rows, PHONE_LINE_BAUD,
 };
 
 // NOTE: () is used in place of LEDs, as we don't care about them right now
@@ -26,16 +25,26 @@ type UsbDevice = usb_device::device::UsbDevice<'static, UsbBusType>;
 
 /// Mapping from switch positions to keys symbols; 'a', '1', '$', etc.
 #[rustfmt::skip]
-pub static LAYOUT: keyberon::layout::Layers<12, 8> = [
-    [No,     No,  Kb2,         Kb3,    Kb4,    Kb5,   Kb6,   Kb7,    Kb8,      Kb9,       No,     No    ],
-    [Equal,  Kb1, W,           E,      R,      T,     Y,     U,      I,        O,         Kb0,    Minus ],
-    [Tab,    Q,   S,           D,      F,      G,     H,     J,      K,        L,         P,      Bslash],
-    [Escape, A,   X,           C,      V,      B,     N,     M,      Comma,    Dot,       SColon, Quote ],
-    [LShift, Z,   NonUsBslash, Left,   Right,  No,    No,    Up,     Down,     LBracket,  Slash,  RShift],
-    [No,     No,  No,          Grave,  LShift, LCtrl, RCtrl, BSpace, RBracket, No,        No,     No    ],
-    [No,     No,  No,          Escape, Space,  LAlt,  RAlt,  Enter,  Escape,   No,        No,     No    ],
-    [No,     No,  No,          Pause,  End,    Home,  PgUp,  PgDown, PScreen,  No,        No,     No    ]
-    // NOTE: this keyboard is in two halfs and this   ^ is the first column of the right half
+pub static LAYOUT: keyberon::layout::Layout<6, 13> = [
+    /*                 Port B                          */
+    /* 3     4       5            6          7       8 */
+    /* -------------- Left Fingers -------------------       Port A*/
+    [No,     No,     Kb2,         Kb3,       Kb4,    Kb5   ], /* 0 */
+    [Equal,  Kb1,    W,           E,         R,      T     ], /* 1 */
+    [Tab,    Q,      S,           D,         F,      G     ], /* 2 */
+    [Escape, A,      X,           C,         V,      B     ], /* 3 */
+    [LShift, Z,      NonUsBslash, Left,      Right,  No    ], /* 4 */
+    /* ------------------- Thumbs -------------------- */
+    /* --- Right  ------------|---------- Left ------- */
+    [RCtrl,  BSpace, RBracket,    Grave,     LShift, LCtrl ], /* 5 */
+    [RAlt,   Enter,  Escape,      Escape,    Space,  LAlt  ], /* 6 */
+    [PgUp,   PgDown, PScreen,     Pause,     End,    Home  ], /* 7 */
+    /* ------------- Right Fingers ----------------- */
+    [Kb6,    Kb7,    Kb8,         Kb9,       No,     No    ], /* 8 */
+    [Y,      U,      I,           O,         Kb0,    Minus ], /* 9 */
+    [H,      J,      K,           L,         P,      Bslash], /* 10 */
+    [N,      M,      Comma,       Dot,       SColon, Quote ], /* 11 */
+    [No,     Up,     Down,        LBracket,  Slash,  RShift], /* 12 */
 ];
 
 /// Poll usb device. Called from within USB rx and tx interrupts
@@ -46,7 +55,6 @@ pub fn usb_poll(usb_dev: &mut UsbDevice, keyboard: &mut UsbClass) {
 }
 /// Resources to build a keyboard
 pub struct Keyboard {
-    pub layout: Layout<12, 8>,
     pub debouncer: [[QuickDraw<75>; 8]; 6],
     pub now: u32,
     pub log: &'static mut Log,
@@ -76,7 +84,6 @@ mod app {
         let mut flash = c.device.FLASH.constrain();
         let mut rcc = c.device.RCC.constrain();
         let debouncer = QuickDraw::build_array();
-        let layout = Layout::new(LAYOUT);
         let scan_freq = 5.khz();
 
         let clocks = rcc
@@ -176,7 +183,7 @@ mod app {
                 dma,
                 scanout,
                 rx,
-                keyboard: Keyboard { debouncer, layout, log, now: 0},
+                keyboard: Keyboard { debouncer, log, now: 0},
             },
             init::Monotonics(),
         )
@@ -200,34 +207,6 @@ mod app {
         (usb_dev, usb_class).lock(|dev, class| usb_poll(dev, class));
     }
 
-    #[task(binds = USART3, priority = 1, resources = [keyboard, rx])]
-    fn uart_rx(mut c: uart_rx::Context) {
-        let maybe_byte = c.resources.rx.lock(|rx| rx.read());
-        match maybe_byte {
-            Ok(byte) => {
-                let KeyEvent { brk, row, col } = match KeyEvent::unpack(&[byte]) {
-                    Ok(p) => p,
-                    Err(_e) => panic!(),
-                };
-                let row = row.into();
-                let col = col.into();
-                let state = if brk { LogicalState::Press } else { LogicalState::Release };
-                let event = Event { coord: (row, col), state };
-                c.resources
-                    .keyboard
-                    .lock(|Keyboard { layout, .. }| layout.event(event));
-            }
-            Err(nb::Error::Other(SError::Framing)) => panic!("a"),
-            Err(nb::Error::Other(SError::Noise)) => panic!("b"),
-            Err(nb::Error::Other(SError::Overrun)) => panic!("c"),
-            Err(nb::Error::Other(SError::Parity)) => panic!("d"),
-            Err(nb::Error::Other(_)) => panic!("e"),
-            // Unlike the other cases, this one simply implies that we got
-            // a spurious interrupt.
-            Err(nb::Error::WouldBlock) => (),
-        }
-    }
-
     #[task(binds = DMA1_CHANNEL5, priority = 1, resources = [
         usb_class, keyboard, &dma, &scanout
     ])]
@@ -241,13 +220,9 @@ mod app {
         let half: usize = if dma.5.isr().htif4().bits() { 0 } else { 1 };
         // Clear all pending interrupts, irrespective of type
         dma.5.ifcr().write(|w| w.cgif4().clear());
-        let report: KbHidReport = keyboard.lock(|Keyboard { layout, log, debouncer, now}| {
+        let report: KbHidReport = keyboard.lock(|Keyboard { log, debouncer, now}| {
             *now = now.wrapping_add(1);
-            for mut event in keys_from_scan(&scanout[half], debouncer, log, *now) {
-                event.coord.1 += 6;
-                layout.event(event);
-            }
-            layout.keycodes().collect()
+            keycodes(&LAYOUT, keys_from_scan(&scanout[half], debouncer, log, *now)).collect()
         });
 
         if usb_class.lock(|k| k.device_mut().set_keyboard_report(report.clone())) {

@@ -1,7 +1,6 @@
 #![no_std]
 use core::sync::atomic::{AtomicBool, Ordering};
 use cortex_m::singleton;
-use keyberon::layout::{Event, LogicalState};
 use packed_struct::prelude::*;
 use stm32f1::stm32f103;
 use stm32f1xx_hal::gpio::{
@@ -356,7 +355,7 @@ pub struct KeyScanIter<'a, const R: usize, const C: usize, const T: u32> {
 }
 
 impl<'a, const R: usize, const C: usize, const T: u32> Iterator for KeyScanIter<'a, R, C, T> {
-    type Item = Event;
+    type Item = (u8, u8);
     fn next(&mut self) -> Option<Self::Item> {
         while self.col < C {
             if self.row == 0 {
@@ -369,29 +368,29 @@ impl<'a, const R: usize, const C: usize, const T: u32> Iterator for KeyScanIter<
                 let press = (self.row_val & (1 << self.row)) != 0;
                 let trigger_row = &mut self.triggers[self.col];
                 let old: QuickDraw<T> = trigger_row[self.row].clone();
-                let to_ret = trigger_row[self.row]
-                    .step(press, self.now)
-                    .map(|e| Event {
-                        coord: (self.row as u8, self.col as u8),
-                        state: if e { LogicalState::Press } else { LogicalState::Release }
-                    });
+                let is_old_pressed = old.is_pressed();
+                trigger_row[self.row].step(press, self.now);
                 let new = &self.triggers[self.col][self.row];
-                if to_ret.is_some() || *new != old {
+                let is_new_pressed = new.is_pressed();
+                if *new != old {
+                    let event = if is_old_pressed == is_new_pressed {
+                        PressRelease::None
+                    } else if is_old_pressed {
+                        PressRelease::Release
+                    } else {
+                        PressRelease::Press
+                    };
                     self.log.log(KeyState {
                         timestamp: self.now,
                         row: self.row as u8,
                         col: self.col as u8,
                         deb: new.state_name(),
-                        event: match &to_ret {
-                            Some(Event{state: LogicalState::Press, ..})   => PressRelease::Press,
-                            Some(Event{state: LogicalState::Release, ..}) => PressRelease::Release,
-                            None                                          => PressRelease::None
-                        }
+                        event
                     });
                 }
                 self.row += 1;
-                if to_ret.is_some() {
-                    return to_ret;
+                if is_new_pressed {
+                    return Some((self.row as u8, self.col as u8))
                 }
             }
             self.col += 1;
@@ -409,7 +408,7 @@ pub fn keys_from_scan<'a, const R: usize, const C: usize, const T: u32>(
     triggers: &'a mut [[QuickDraw<T>; R]; C],
     log: &'a mut Log,
     now: u32,
-) -> impl Iterator<Item=Event> + 'a {
+) -> impl Iterator<Item=(u8, u8)> + 'a {
     KeyScanIter {
         scanout_half,
         triggers,
@@ -481,24 +480,24 @@ pub const PHONE_LINE_BAUD: u32 = 115_200;
 ///  U - an up or released key from a scan or as an event
 ///  S - stable timeout has been reached
 ///
-/// ┌───────────S[D]─┬─D─{Bouncing_D_D}
+/// ┌───────────S[D]─┬─D─{Bouncing_D_D[U]}
 /// │               !S     ^   │
 /// │                └─────┤   U
-/// ├──────────┐           D   │
-/// v          D           │   v
-/// {Stable_D}─┴─U[U]─┬─>{Bouncing_D_U}
+/// ├─────────────┐        D   │
+/// v             D        │   v
+/// {Stable_D[D]}─┴─U─┬─>{Bouncing_D_U[U]}
 /// ^                 │        │
 /// │                 │        U
 /// S                 └─────!S─┤
-/// ├─!S────────────┐          S
-/// D               │          │
-/// │               │          v
-/// {Bouncing_U_D}<─┴─D[D]─┬─{Stable_U}
+/// ├─!S───────────────┐       S
+/// D                  │       │
+/// │                  │       v
+/// {Bouncing_U_D[D]}<─┴─D─┬─{Stable_U[U]}
 /// ^     │                │   ^
 /// │     U                └─U─┤
-/// D     ├──────!S─┐          │
-/// │     v         │          │
-/// {Bouncing_U_U}─U┴─S[U]─────┘
+/// D     ├─────────!S─┐       │
+/// │     v            │       │
+/// {Bouncing_U_U[D]}─U┴─S─────┘
 ///  ```
 ///
 ///  Interestingly, the state diagram is rotationally semetric, leading to a
@@ -513,14 +512,14 @@ pub const PHONE_LINE_BAUD: u32 = 115_200;
 ///  S - stable timeout has been reached
 ///  N=!N - swap the press/release state
 ///
-/// ┌───────────S[N]─┬──N───{Bouncing_N_N}
-/// │               !S       ^   │
-/// │                └───────┤  !N
-/// ├──────────┐             N   │
-/// v          N             │   v
-/// {Stable_N}─┴─!N[!N]─┬─>{Bouncing_N_!N}
+/// ┌───────────S─┬──N───{Bouncing_N_N[!N]}
+/// │            !S        ^   │
+/// │             └────────┤  !N
+/// ├─────────────┐        N   │
+/// v             N        │   v
+/// {Stable_N[N]}─┴─!N─┬─>{Bouncing_N_!N[!N]}
 /// ^                  !S    │
-/// └───────S,N=!N──────┴!N──┘
+/// └───────S,N=!N─────┴─!N──┘
 /// ```
 ///
 /// We could rename Bouncing_N_!N to BouncingNoEvent and BouncingEvent and go
@@ -539,12 +538,12 @@ pub const PHONE_LINE_BAUD: u32 = 115_200;
 ///  S - stable timeout has been reached
 ///  N=!N - swap the press/release state
 ///
-/// ┌───────────S[N]─┬──N───{Bouncing(N,N)*}
-/// │               !S       ^   │
-/// │                └───────┤  !N
-/// ├───────────┐            N   │
-/// v           N            │   v
-/// {Stable(N)}─┴─!N[!N]─┬─>{Bouncing(N,!N)*}
+/// ┌───────────S─┬──N───{Bouncing(N,N)*[!N]}
+/// │            !S        ^   │
+/// │             └────────┤  !N
+/// ├──────────────┐       N   │
+/// v              N       │   v
+/// {Stable(N)[N]}─┴─!N─┬─>{Bouncing(N,!N)*[!N]}
 /// ^                   !S   │
 /// └───────S,N=!N───────┴!N─┘
 /// ```
@@ -597,23 +596,28 @@ impl<const T: u32> QuickDraw<T> {
         }
     }
 
+    /// Is this state associated with a pressed key?
+    pub fn is_pressed(&self) -> bool {
+        match self {
+            QuickDraw::Stable(pressed) => *pressed,
+            QuickDraw::Bouncing{prior, ..} => !prior,
+        }
+    }
+
     /// Step the state machine
     ///
     /// The state machine progresses as described  in the struct documentation.
-    pub fn step(&mut self, state: bool, now: u32) -> Option<bool> {
-        let (next_state, event) = match self {
+    pub fn step(&mut self, state: bool, now: u32) {
+        let next_state = match self {
             QuickDraw::Stable(prior) => {
                 if state != *prior {
-                    (
-                        QuickDraw::Bouncing {
-                            prior: *prior,
-                            current: state,
-                            since: now,
-                        },
-                        Some(state),
-                    )
+                    QuickDraw::Bouncing {
+                        prior: *prior,
+                        current: state,
+                        since: now,
+                    }
                 } else {
-                    (self.clone(), None)
+                    self.clone()
                 }
             }
             QuickDraw::Bouncing {
@@ -628,42 +632,27 @@ impl<const T: u32> QuickDraw<T> {
                     //
                     // In the state diagram, this is the 4 transitions between
                     //  the bouncing states.
-                    (
-                        QuickDraw::Bouncing {
-                            prior: *prior,
-                            current: state,
-                            since: now,
-                        },
-                        None,
-                    )
+                    QuickDraw::Bouncing {
+                        prior: *prior,
+                        current: state,
+                        since: now,
+                    }
                 } else if now.wrapping_sub(*since) < T {
                     // no bounce happened, and we are not yet stable. Nothing
                     // happens here.
                     //
                     // This is the 4 self-transitions of the bouncing states in
                     // the state diagram.
-                    (self.clone(), None)
+                    self.clone()
                 } else {
                     // We have hit or exceeded the stable_time and no bouncing
                     // happened.
                     //
                     // This corresponds to the transitions marked with an (S).
-                    //
-                    // Confusingly, we emit an event when we stablize to the
-                    // same value that we had before the bouncing began.
-                    //
-                    // This actually makes sense though, as it implies that
-                    // the switch bounced the whole time it was pressed.
-                    let event = if prior == current {
-                        Some(*current)
-                    } else {
-                        None
-                    };
-                    (QuickDraw::Stable(*current), event)
+                    QuickDraw::Stable(*current)
                 }
             }
         };
         *self = next_state;
-        event
     }
 }
