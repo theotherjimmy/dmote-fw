@@ -6,8 +6,8 @@ use keyberon::layout::{Layout, keycode};
 use keyberon::key_code::KbHidReport;
 use stm32f1::stm32f103;
 use stm32f1xx_hal::gpio::{
-    gpioa::{PA0, PA1, PA2, PA3, PA4, PA5, PA6, PA7},
-    gpiob::{PB3, PB4, PB5, PB6, PB7, PB8},
+    gpioa::{PA0, PA1, PA2, PA3, PA4, PA5},
+    gpiob::{PB3, PB4, PB5, PB6, PB7, PB8, PB9, PB10, PB11, PB12, PB13, PB14, PB15},
     Input, Output, PullDown, PushPull,
 };
 use stm32f1xx_hal::prelude::*;
@@ -43,44 +43,54 @@ fn compute_arr_presc(freq: u32, clock: u32) -> (u16, u16) {
 
 /// Columns of the keyboard matrix
 ///
-/// Pin| Left Half wiring                  | Right half wiring
-/// ---|-----------------------------------|-----------------------------------
-/// PB3| Pinky col - 1                     | Pointer col + 1 & Thumb col +1
-/// PB4| Pinky home col                    | Ponter Home col & Thumb Home col
-/// PB5| Ring home col                     | Middle Home col & Thumb col -1
-/// PB6| Middle Home col & Thumb col -1    | Ring Home col
-/// PB7| Pointer Home col & Thumb Home col | Pinky Home col
-/// PB8| Pointer col + 1 & Thumb col + 1   | Pinky col - 1
+/// Pin | Left Half wiring                  | Right half wiring
+/// ----|-----------------------------------|---------------------------------
+/// PA3 | Pinky col - 1                     | Pointer col + 1 & Thumb col +1
+/// PA4 | Pinky home col                    | Ponter Home col & Thumb Home col
+/// PA5 | Ring home col                     | Middle Home col & Thumb col -1
+/// PA6 | Middle Home col & Thumb col -1    | Ring Home col
+/// PA7 | Pointer Home col & Thumb Home col | Pinky Home col
+/// PA8 | Pointer col + 1 & Thumb col + 1   | Pinky col - 1
 pub struct Cols(
-    pub PB3<Output<PushPull>>,
-    pub PB4<Output<PushPull>>,
-    pub PB5<Output<PushPull>>,
-    pub PB6<Output<PushPull>>,
-    pub PB7<Output<PushPull>>,
-    pub PB8<Output<PushPull>>,
+    pub PA0<Output<PushPull>>,
+    pub PA1<Output<PushPull>>,
+    pub PA2<Output<PushPull>>,
+    pub PA3<Output<PushPull>>,
+    pub PA4<Output<PushPull>>,
+    pub PA5<Output<PushPull>>,
 );
 
 /// Rows of the keyboard matrix
 ///
-/// Pin | Wiring for both halfs
-/// ----|----------------------------------
-/// PA0 | Home Row + 2
-/// PA1 | Home Row + 1
-/// PA2 | Home Row for non-Pinky fingers
-/// PA3 | Home Row - 1 and Pinky Home
-/// PA4 | Howe Row - 2
-/// PA5 | Home Row - 3 & Thumb Home Row + 1
-/// PA6 | Thumb Home Row
-/// PA7 | Thumb Home Row - 1
+/// Pin  | Half  | Wiring
+/// -----|-------|--------------------------
+/// PB3  | Left  | Home Row + 2
+/// PB4  | Left  | Home Row + 1
+/// PB5  | Left  | Home Row for non-Pinky fingers
+/// PB6  | Left  | Home Row - 1 and Pinky Home
+/// PB7  | Left  | Home Row - 2
+/// PB8  | Both  | Home Row - 3 & Thumb Home Row + 1
+/// PB9  | Both  | Thumb Home Row
+/// PB10 | Both  | Thumb Home Row - 1
+/// PB11 | Right | Home Row + 2
+/// PB12 | Right | Home Row + 1
+/// PB13 | Right | Home Row for non-Pinky fingers
+/// PB14 | Right | Home Row - 1 and Pinky Home
+/// PB15 | Right | Howe Row - 2
 pub struct Rows(
-    pub PA0<Input<PullDown>>,
-    pub PA1<Input<PullDown>>,
-    pub PA2<Input<PullDown>>,
-    pub PA3<Input<PullDown>>,
-    pub PA4<Input<PullDown>>,
-    pub PA5<Input<PullDown>>,
-    pub PA6<Input<PullDown>>,
-    pub PA7<Input<PullDown>>,
+    pub PB3<Input<PullDown>>,
+    pub PB4<Input<PullDown>>,
+    pub PB5<Input<PullDown>>,
+    pub PB6<Input<PullDown>>,
+    pub PB7<Input<PullDown>>,
+    pub PB8<Input<PullDown>>,
+    pub PB9<Input<PullDown>>,
+    pub PB10<Input<PullDown>>,
+    pub PB11<Input<PullDown>>,
+    pub PB12<Input<PullDown>>,
+    pub PB13<Input<PullDown>>,
+    pub PB14<Input<PullDown>>,
+    pub PB15<Input<PullDown>>,
 );
 
 /// All gpios used by the key matrix.
@@ -90,7 +100,7 @@ pub struct Matrix {
 }
 
 /**
- * Setup DMA to scan an 8 row, 6 column keyboard matrix.
+ * Setup DMA to scan an 13 row, 6 column keyboard matrix.
  *
  * # Matrix Scanning
  *
@@ -100,19 +110,20 @@ pub struct Matrix {
  * debouncing, matrix to keycode translation and USB traffic.
  *
  * The matrix will be represented in a semi-packed way, in that the scans will
- * produce a u8 per row with a bit for each matrix intersection.
+ * produce a u16 per row with a bit for each matrix intersection, and an extra 3
+ * bits.
  *
  * Starting from the timer initilalization, the DMA implement the following
  * timing:
  * ```text
  * TIM1 |    0    |    1    |    2    |    3    |    4    |    0    |
  * OUT  |000000000|000000000|000001000|000001000|000001000|000001000|-\
- * IN   |000000000|000000000|Settling |Settling |Settling |0rrrrrrrr| |
+ * IN   |000000000|000000000|Settling |Settling |Settling |rrrrrrrrr| |
  *    ________________________________________________________________/
  *   /
  *   |  |    1    |    2    |    3    |    4    |    0    |    1    |
  *   \->|000001000|000010000|000010000|000010000|000010000|000010000| -> etc.
- *      |0rrrrrrrr|Settling |Settling |Settling |0rrrrrrrr|0rrrrrrrr|
+ *      |rrrrrrrrr|Settling |Settling |Settling |rrrrrrrrr|rrrrrrrrr|
  * ```
  *
  * # Buffering
@@ -147,7 +158,7 @@ pub fn dma_key_scan(
     ahb: &mut AHB,
     apb2: &mut APB2,
     clocks: &Clocks,
-) -> (dma::dma1::Channels, &'static [[u8; 6]; 2]) {
+) -> (dma::dma1::Channels, &'static [[u16; 6]; 2]) {
     // Values to be written to the Bit Set & Reset Register (BSRR).
     //
     // The upper 16 bits (16..=31) set pins to 0 when written (reset), and the
@@ -163,7 +174,7 @@ pub fn dma_key_scan(
         (0b011111000 << 16) | 0b100000000,
     ];
     let mut dma = dma.split(ahb);
-    let scanout = singleton!(: [[u8; 6]; 2] = [[0; 6]; 2]).unwrap();
+    let scanout = singleton!(: [[u16; 6]; 2] = [[0; 6]; 2]).unwrap();
 
     // Implementation Notes:
     //
@@ -192,7 +203,7 @@ pub fn dma_key_scan(
     dma.4.set_peripheral_address(
         // Safety: we don't enable pointer incrimenting of Perihperal addresses
         // Further, this pointer dereference is always safe.
-        unsafe { (*stm32f103::GPIOB::ptr()).bsrr.as_ptr() } as u32,
+        unsafe { (*stm32f103::GPIOA::ptr()).bsrr.as_ptr() } as u32,
         false,
     );
     // Safety: we have the lenth correct below. This should probably be unsafe, because
@@ -225,7 +236,7 @@ pub fn dma_key_scan(
     dma.5.set_peripheral_address(
         // Safety: we don't enable pointer incrimenting of Perihperal addresses
         // Further, this pointer dereference is always safe.
-        unsafe { (*stm32f103::GPIOA::ptr()).idr.as_ptr() } as *const u16 as u32,
+        unsafe { (*stm32f103::GPIOB::ptr()).idr.as_ptr() } as *const u16 as u32,
         false,
     );
     // Safety: we set the transfer length correctly, and we only read the half of the
@@ -244,7 +255,7 @@ pub fn dma_key_scan(
             .dir().from_peripheral()
             .minc().enabled()
             .psize().bits32()
-            .msize().bits8()
+            .msize().bits16()
             // HTIE: Half Transfer Interrupt Enable
             // We want to enable both the half and full transfer interrupts
             // as we have a double-buffering setup going.
@@ -346,9 +357,9 @@ impl Log {
 }
 
 /// Scan all keys into the triggers and generate a HID report.
-pub fn scan<'a, const R: usize, const C: usize, const T: u32>(
+pub fn scan<'a, const R: usize, const C: usize, const T: u8>(
     layout: &'static Layout<C, R>,
-    scanout_half: &'a [u8; C],
+    scanout_half: &'a [u16; C],
     triggers: &'a mut [[QuickDraw<T>; R]; C],
     log: &'a mut Log,
     timestamp: u32,
@@ -359,7 +370,7 @@ pub fn scan<'a, const R: usize, const C: usize, const T: u32>(
             let press = (row_val & (1 << row)) != 0;
             let old: QuickDraw<T> = trigger_row[row].clone();
             let is_old_pressed = old.is_pressed();
-            trigger_row[row].step(press, timestamp);
+            trigger_row[row].step(press, timestamp as u8);
             let new = &trigger_row[row];
             let is_new_pressed = new.is_pressed();
             if *new != old {
@@ -527,7 +538,7 @@ pub const PHONE_LINE_BAUD: u32 = 115_200;
 /// names. Since Stable only has one arugemnt, it's pretty clear how it should
 /// be used.
 #[derive(Clone, Copy, PartialEq)]
-pub enum QuickDraw<const T: u32> {
+pub enum QuickDraw<const T: u8> {
     /// The key is stable at the contained state
     Stable(bool),
     /// The key is bouncing
@@ -537,17 +548,17 @@ pub enum QuickDraw<const T: u32> {
         /// The most recent state that we observed
         current: bool,
         /// The time that we observed the current state
-        since: u32,
+        since: u8,
     },
 }
 
-impl<const T: u32> Default for QuickDraw<T> {
+impl<const T: u8> Default for QuickDraw<T> {
     fn default() -> Self {
         QuickDraw::Stable(false)
     }
 }
 
-impl<const T: u32> QuickDraw<T> {
+impl<const T: u8> QuickDraw<T> {
 
     pub fn state_name(&self) -> DebState {
         use DebState::*;
@@ -572,7 +583,7 @@ impl<const T: u32> QuickDraw<T> {
     /// Step the state machine
     ///
     /// The state machine progresses as described  in the struct documentation.
-    pub fn step(&mut self, state: bool, now: u32) {
+    pub fn step(&mut self, state: bool, now: u8) {
         let next_state = match self {
             QuickDraw::Stable(prior) => {
                 if state != *prior {

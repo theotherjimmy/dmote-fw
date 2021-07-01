@@ -6,13 +6,12 @@ use panic_halt as _;
 use rtic::app;
 use stm32f1xx_hal::dma;
 use stm32f1xx_hal::prelude::*;
-use stm32f1xx_hal::serial::Rx;
 use stm32f1xx_hal::usb::{Peripheral, UsbBus, UsbBusType};
 use usb_device::bus::UsbBusAllocator;
 use usb_device::class::UsbClass as _;
 
 use dmote_fw::{
-    dma_key_scan, scan, Cols, Log, Matrix, QuickDraw, Rows, PHONE_LINE_BAUD,
+    dma_key_scan, scan, Cols, Log, Matrix, QuickDraw, Rows
 };
 
 // NOTE: () is used in place of LEDs, as we don't care about them right now
@@ -63,17 +62,14 @@ pub struct Keyboard {
 mod app {
     use super::*;
     use embedded_hal::digital::v2::OutputPin;
-    use stm32f1xx_hal::pac::USART3;
-    use stm32f1xx_hal::serial::{Config, Serial};
 
     #[resources]
     struct Resources {
         usb_dev: UsbDevice,
         usb_class: UsbClass,
         keyboard: Keyboard,
-        rx: Rx<USART3>,
         dma: dma::dma1::Channels,
-        scanout: &'static [[u8; 6]; 2],
+        scanout: &'static [[u16; 6]; 2],
     }
 
     #[init]
@@ -125,40 +121,31 @@ mod app {
         let usb_class = keyberon::new_class(usb_bus, ());
         let usb_dev = keyberon::new_device(usb_bus);
 
-        let pin_tx = gpiob.pb10.into_alternate_push_pull(&mut gpiob.crh);
-        let pin_rx = gpiob.pb11;
-
-        let serial = Serial::usart3(
-            c.device.USART3,
-            (pin_tx, pin_rx),
-            &mut afio.mapr,
-            Config::default().baudrate(PHONE_LINE_BAUD.bps()),
-            clocks,
-            &mut rcc.apb1,
-        );
-
-        let (_, mut rx) = serial.split();
-
         // NOTE: These have to be setup, though they are dropped, as without this setup
         // code, it's not possible to read the matrix.
-        #[rustfmt::skip]
         let cols = Cols(
-                  pb3.into_push_pull_output(&mut gpiob.crl),
-                  pb4.into_push_pull_output(&mut gpiob.crl),
-            gpiob.pb5.into_push_pull_output(&mut gpiob.crl),
-            gpiob.pb6.into_push_pull_output(&mut gpiob.crl),
-            gpiob.pb7.into_push_pull_output(&mut gpiob.crl),
-            gpiob.pb8.into_push_pull_output(&mut gpiob.crh),
+            gpioa.pa0.into_push_pull_output(&mut gpioa.crl),
+            gpioa.pa1.into_push_pull_output(&mut gpioa.crl),
+            gpioa.pa2.into_push_pull_output(&mut gpioa.crl),
+            gpioa.pa3.into_push_pull_output(&mut gpioa.crl),
+            gpioa.pa4.into_push_pull_output(&mut gpioa.crl),
+            gpioa.pa5.into_push_pull_output(&mut gpioa.crl),
         );
+        #[rustfmt::skip]
         let rows = Rows(
-            gpioa.pa0.into_pull_down_input(&mut gpioa.crl),
-            gpioa.pa1.into_pull_down_input(&mut gpioa.crl),
-            gpioa.pa2.into_pull_down_input(&mut gpioa.crl),
-            gpioa.pa3.into_pull_down_input(&mut gpioa.crl),
-            gpioa.pa4.into_pull_down_input(&mut gpioa.crl),
-            gpioa.pa5.into_pull_down_input(&mut gpioa.crl),
-            gpioa.pa6.into_pull_down_input(&mut gpioa.crl),
-            gpioa.pa7.into_pull_down_input(&mut gpioa.crl),
+                  pb3.into_pull_down_input(&mut gpiob.crl),
+                  pb4.into_pull_down_input(&mut gpiob.crl),
+            gpiob.pb5.into_pull_down_input(&mut gpiob.crl),
+            gpiob.pb6.into_pull_down_input(&mut gpiob.crl),
+            gpiob.pb7.into_pull_down_input(&mut gpiob.crl),
+            gpiob.pb8.into_pull_down_input(&mut gpiob.crh),
+            gpiob.pb9.into_pull_down_input(&mut gpiob.crh),
+            gpiob.pb10.into_pull_down_input(&mut gpiob.crh),
+            gpiob.pb11.into_pull_down_input(&mut gpiob.crh),
+            gpiob.pb12.into_pull_down_input(&mut gpiob.crh),
+            gpiob.pb13.into_pull_down_input(&mut gpiob.crh),
+            gpiob.pb14.into_pull_down_input(&mut gpiob.crh),
+            gpiob.pb15.into_pull_down_input(&mut gpiob.crh),
         );
 
         let (dma, scanout) = dma_key_scan(
@@ -171,8 +158,6 @@ mod app {
             &clocks,
         );
 
-        rx.listen();
-
         let log = Log::get();
 
         (
@@ -181,7 +166,6 @@ mod app {
                 usb_class,
                 dma,
                 scanout,
-                rx,
                 keyboard: Keyboard { debouncer, log, now: 0},
             },
             init::Monotonics(),
