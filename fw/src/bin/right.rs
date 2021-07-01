@@ -1,7 +1,6 @@
 #![no_main]
 #![no_std]
 use keyberon::key_code::KbHidReport;
-use keyberon::layout::keycodes;
 use keyberon::key_code::KeyCode::*;
 use panic_halt as _;
 use rtic::app;
@@ -13,7 +12,7 @@ use usb_device::bus::UsbBusAllocator;
 use usb_device::class::UsbClass as _;
 
 use dmote_fw::{
-    dma_key_scan, keys_from_scan, Cols, Log, Matrix, QuickDraw, Rows, PHONE_LINE_BAUD,
+    dma_key_scan, scan, Cols, Log, Matrix, QuickDraw, Rows, PHONE_LINE_BAUD,
 };
 
 // NOTE: () is used in place of LEDs, as we don't care about them right now
@@ -55,7 +54,7 @@ pub fn usb_poll(usb_dev: &mut UsbDevice, keyboard: &mut UsbClass) {
 }
 /// Resources to build a keyboard
 pub struct Keyboard {
-    pub debouncer: [[QuickDraw<75>; 8]; 6],
+    pub debouncer: [[QuickDraw<75>; 13]; 6],
     pub now: u32,
     pub log: &'static mut Log,
 }
@@ -83,7 +82,7 @@ mod app {
 
         let mut flash = c.device.FLASH.constrain();
         let mut rcc = c.device.RCC.constrain();
-        let debouncer = QuickDraw::build_array();
+        let debouncer = [[Default::default(); 13]; 6];
         let scan_freq = 5.khz();
 
         let clocks = rcc
@@ -222,7 +221,7 @@ mod app {
         dma.5.ifcr().write(|w| w.cgif4().clear());
         let report: KbHidReport = keyboard.lock(|Keyboard { log, debouncer, now}| {
             *now = now.wrapping_add(1);
-            keycodes(&LAYOUT, keys_from_scan(&scanout[half], debouncer, log, *now)).collect()
+            scan(&LAYOUT, &scanout[half], debouncer, log, *now)
         });
 
         if usb_class.lock(|k| k.device_mut().set_keyboard_report(report.clone())) {

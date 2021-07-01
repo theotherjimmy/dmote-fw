@@ -281,19 +281,6 @@ impl KeyCode {
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 pub struct KbHidReport([u8; 8]);
 
-impl core::iter::FromIterator<KeyCode> for KbHidReport {
-    fn from_iter<T>(iter: T) -> Self
-    where
-        T: IntoIterator<Item = KeyCode>,
-    {
-        let mut res = Self::default();
-        for kc in iter {
-            res.pressed(kc);
-        }
-        res
-    }
-}
-
 impl KbHidReport {
     /// Returns the byte slice corresponding to the report.
     pub fn as_bytes(&self) -> &[u8] {

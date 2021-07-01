@@ -2,6 +2,8 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 use cortex_m::singleton;
 use packed_struct::prelude::*;
+use keyberon::layout::{Layout, keycode};
+use keyberon::key_code::KbHidReport;
 use stm32f1::stm32f103;
 use stm32f1xx_hal::gpio::{
     gpioa::{PA0, PA1, PA2, PA3, PA4, PA5, PA6, PA7},
@@ -343,81 +345,47 @@ impl Log {
     }
 }
 
-/// An iterator through events produced by a keys scan
-pub struct KeyScanIter<'a, const R: usize, const C: usize, const T: u32> {
+/// Scan all keys into the triggers and generate a HID report.
+pub fn scan<'a, const R: usize, const C: usize, const T: u32>(
+    layout: &'static Layout<C, R>,
     scanout_half: &'a [u8; C],
     triggers: &'a mut [[QuickDraw<T>; R]; C],
     log: &'a mut Log,
-    now: u32,
-    row: usize,
-    col: usize,
-    row_val: u8,
-}
-
-impl<'a, const R: usize, const C: usize, const T: u32> Iterator for KeyScanIter<'a, R, C, T> {
-    type Item = (u8, u8);
-    fn next(&mut self) -> Option<Self::Item> {
-        while self.col < C {
-            if self.row == 0 {
-                // Unsafe here is perfectly safe, as we're reading a reference as volatile.
-                // It is, however, necessary, as this will change from beneath us when it's
-                // populated by the DMA scan.
-                self.row_val = unsafe {core::ptr::read_volatile(&self.scanout_half[self.col])};
+    timestamp: u32,
+) -> KbHidReport {
+    let mut report = KbHidReport::default();
+    for (col, (row_val, trigger_row)) in scanout_half.iter().zip(&mut triggers[..]).enumerate() {
+        for row in 0..R {
+            let press = (row_val & (1 << row)) != 0;
+            let old: QuickDraw<T> = trigger_row[row].clone();
+            let is_old_pressed = old.is_pressed();
+            trigger_row[row].step(press, timestamp);
+            let new = &trigger_row[row];
+            let is_new_pressed = new.is_pressed();
+            if *new != old {
+                let event = if is_old_pressed == is_new_pressed {
+                    PressRelease::None
+                } else if is_old_pressed {
+                    PressRelease::Release
+                } else {
+                    PressRelease::Press
+                };
+                log.log(KeyState {
+                    timestamp,
+                    row: row as u8,
+                    col: col as u8,
+                    deb: new.state_name(),
+                    event
+                });
             }
-            while self.row < R {
-                let press = (self.row_val & (1 << self.row)) != 0;
-                let trigger_row = &mut self.triggers[self.col];
-                let old: QuickDraw<T> = trigger_row[self.row].clone();
-                let is_old_pressed = old.is_pressed();
-                trigger_row[self.row].step(press, self.now);
-                let new = &self.triggers[self.col][self.row];
-                let is_new_pressed = new.is_pressed();
-                if *new != old {
-                    let event = if is_old_pressed == is_new_pressed {
-                        PressRelease::None
-                    } else if is_old_pressed {
-                        PressRelease::Release
-                    } else {
-                        PressRelease::Press
-                    };
-                    self.log.log(KeyState {
-                        timestamp: self.now,
-                        row: self.row as u8,
-                        col: self.col as u8,
-                        deb: new.state_name(),
-                        event
-                    });
-                }
-                self.row += 1;
-                if is_new_pressed {
-                    return Some((self.row as u8, self.col as u8))
+            if is_new_pressed {
+                if let Some(&kc) = keycode(layout, row, col) {
+                    report.pressed(kc);
                 }
             }
-            self.col += 1;
-            self.row = 0;
         }
-        self.col = 0;
-        return None;
     }
-}
-
-/// Convenience function that accepts a scanout and produces a sequence of
-/// triggered from the scanout_half produced by DMA
-pub fn keys_from_scan<'a, const R: usize, const C: usize, const T: u32>(
-    scanout_half: &'a [u8; C],
-    triggers: &'a mut [[QuickDraw<T>; R]; C],
-    log: &'a mut Log,
-    now: u32,
-) -> impl Iterator<Item=(u8, u8)> + 'a {
-    KeyScanIter {
-        scanout_half,
-        triggers,
-        now,
-        log,
-        row: 0,
-        col: 0,
-        row_val: 0,
-    }
+    report
 }
 
 /// Between the halfs of my keyboard, there is a phone line (RJ9) serial
@@ -580,9 +548,6 @@ impl<const T: u32> Default for QuickDraw<T> {
 }
 
 impl<const T: u32> QuickDraw<T> {
-    pub fn build_array() -> [[Self; 8]; 6] {
-        [[Self::default(); 8]; 6]
-    }
 
     pub fn state_name(&self) -> DebState {
         use DebState::*;
