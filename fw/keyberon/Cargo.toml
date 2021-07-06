@@ -13,4 +13,3 @@ readme = "README.md"
 
 [dependencies]
 usb-device = "0.2.0"
-heapless = { version = "0.7.1", default-features = false }

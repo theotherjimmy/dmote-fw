@@ -1,7 +1,6 @@
 #![no_std]
 use core::sync::atomic::{AtomicBool, Ordering};
 use cortex_m::singleton;
-use packed_struct::prelude::*;
 use keyberon::layout::{Layout, keycode};
 use keyberon::key_code::KbHidReport;
 use stm32f1::stm32f103;
@@ -16,21 +15,6 @@ use stm32f1xx_hal::time::Hertz;
 use stm32f1xx_hal::{dma, pac};
 
 use shared_types::{DebState, KeyState, PressRelease};
-
-/// The KeyEvent struct is a packed representation of a key event that is
-/// sent over the phone line.
-///
-/// As it turns out, we only need 7 bits.
-#[derive(PackedStruct, Debug, Copy, Clone, PartialEq)]
-#[packed_struct(bit_numbering = "msb0")]
-pub struct KeyEvent {
-    #[packed_field(bits = "0..=2")]
-    pub row: Integer<u8, packed_bits::Bits3>,
-    #[packed_field(bits = "3..=5")]
-    pub col: Integer<u8, packed_bits::Bits3>,
-    #[packed_field(bits = "7")]
-    pub brk: bool,
-}
 
 /// Compute the Auto Reload Register and Prescaller Register values for a timer
 #[inline(always)]

@@ -10,7 +10,6 @@ cortex-m = "0.7.2"
 cortex-m-rt = "0.6.13"
 usb-device = "0.2.8"
 panic-halt = "0.2"
-nb = "1.0"
 
 [dependencies.shared-types]
 version = "0.1.0"
@@ -34,10 +33,6 @@ path = "stm32f1xx-hal"
 version = "0.13.0"
 features = ["stm32f103"]
 path = "stm32f1"
-
-[dependencies.packed_struct]
-version = "0.5.0"
-default_features = false
 
 [profile.dev]
 panic = "abort"
