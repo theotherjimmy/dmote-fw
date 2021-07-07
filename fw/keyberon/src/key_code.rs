@@ -7,7 +7,7 @@
 #[repr(u8)]
 pub enum KeyCode {
     /// The "no" key, a placeholder to express nothing.
-    No = 0x00,
+    __ = 0x00,
     /// Error if too much keys are pressed at the same time.
     ErrorRollOver,
     /// The POST fail error.
@@ -292,7 +292,7 @@ impl KbHidReport {
     pub fn pressed(&mut self, kc: KeyCode) {
         use KeyCode::*;
         match kc {
-            No => (),
+            __ => (),
             ErrorRollOver | PostFail | ErrorUndefined => self.set_all(kc),
             kc if kc.is_modifier() => self.0[0] |= kc.as_modifier_bit(),
             _ => self.0[2..]

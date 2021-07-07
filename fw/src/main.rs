@@ -27,22 +27,22 @@ pub static LAYOUT: keyberon::layout::Layout<6, 13> = [
     /*                 Port B                          */
     /* 3     4       5            6          7       8 */
     /* -------------- Left Fingers -------------------       Port A*/
-    [No,     No,     Kb2,         Kb3,       Kb4,    Kb5   ], /* 0 */
+    [__,     __,     Kb2,         Kb3,       Kb4,    Kb5   ], /* 0 */
     [Equal,  Kb1,    W,           E,         R,      T     ], /* 1 */
     [Tab,    Q,      S,           D,         F,      G     ], /* 2 */
     [Escape, A,      X,           C,         V,      B     ], /* 3 */
-    [LShift, Z,      NonUsBslash, Left,      Right,  No    ], /* 4 */
+    [LShift, Z,      NonUsBslash, Left,      Right,  __    ], /* 4 */
     /* ------------------- Thumbs -------------------- */
     /* --- Right  ------------|---------- Left ------- */
     [RCtrl,  BSpace, RBracket,    Grave,     LShift, LCtrl ], /* 5 */
     [RAlt,   Enter,  Escape,      Escape,    Space,  LAlt  ], /* 6 */
     [PgUp,   PgDown, PScreen,     Pause,     End,    Home  ], /* 7 */
     /* ------------- Right Fingers ----------------- */
-    [Kb6,    Kb7,    Kb8,         Kb9,       No,     No    ], /* 8 */
+    [Kb6,    Kb7,    Kb8,         Kb9,       __,     __    ], /* 8 */
     [Y,      U,      I,           O,         Kb0,    Minus ], /* 9 */
     [H,      J,      K,           L,         P,      Bslash], /* 10 */
     [N,      M,      Comma,       Dot,       SColon, Quote ], /* 11 */
-    [No,     Up,     Down,        LBracket,  Slash,  RShift], /* 12 */
+    [__,     Up,     Down,        LBracket,  Slash,  RShift], /* 12 */
 ];
 
 /// Poll usb device. Called from within USB rx and tx interrupts
