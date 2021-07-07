@@ -1,7 +1,5 @@
 #![no_main]
 #![no_std]
-use keyberon::key_code::KbHidReport;
-use keyberon::key_code::KeyCode::*;
 use panic_halt as _;
 use rtic::app;
 use stm32f1xx_hal::dma;
@@ -9,21 +7,43 @@ use stm32f1xx_hal::prelude::*;
 use stm32f1xx_hal::usb::{Peripheral, UsbBus, UsbBusType};
 use usb_device::bus::UsbBusAllocator;
 use usb_device::class::UsbClass as _;
+use usb_device::prelude::*;
 
 use dmote_fw::{
-    dma_key_scan, scan, Cols, Log, Matrix, QuickDraw, Rows
+    dma_key_scan, scan, hid, keyboard, Cols, Log, Matrix, QuickDraw, Rows
 };
+use dmote_fw::key_code::{KbHidReport, KeyCode::*};
 
-// NOTE: () is used in place of LEDs, as we don't care about them right now
-/// Type alias for a keyboard with no LEDs.
-type UsbClass = keyberon::Class<'static, UsbBusType, ()>;
+/// A handly shortcut for the keyberon USB class type.
+pub type UsbClass = hid::HidClass<'static, UsbBusType, keyboard::Keyboard<()>>;
+
+const VID: u16 = 0x1209;
+
+const PID: u16 = 0x345c;
+
+/// Constructor for `Class`.
+pub fn new_class(bus: &'static UsbBusAllocator<UsbBusType>) -> UsbClass {
+    hid::HidClass::new(keyboard::Keyboard::new(()), bus)
+}
+
+/// Constructor for a USB keyboard device.
+pub fn new_device(
+    bus: &UsbBusAllocator<UsbBusType>
+) -> usb_device::device::UsbDevice<'_, UsbBusType> {
+    UsbDeviceBuilder::new(bus, UsbVidPid(VID, PID))
+        .manufacturer("Me")
+        .product("Dactyl Manuform: OTE")
+        .serial_number(env!("CARGO_PKG_VERSION"))
+        .build()
+}
+
 /// Type alias for usb devices.
 type UsbDevice = usb_device::device::UsbDevice<'static, UsbBusType>;
 
 
 /// Mapping from switch positions to keys symbols; 'a', '1', '$', etc.
 #[rustfmt::skip]
-pub static LAYOUT: keyberon::layout::Layout<6, 13> = [
+pub static LAYOUT: dmote_fw::Layout<13, 6> = [
     /*                 Port B                          */
     /* 3     4       5            6          7       8 */
     /* -------------- Left Fingers -------------------       Port A*/
@@ -118,8 +138,8 @@ mod app {
             None => panic!(),
         };
 
-        let usb_class = keyberon::new_class(usb_bus, ());
-        let usb_dev = keyberon::new_device(usb_bus);
+        let usb_class = new_class(usb_bus);
+        let usb_dev = new_device(usb_bus);
 
         // NOTE: These have to be setup, though they are dropped, as without this setup
         // code, it's not possible to read the matrix.

@@ -120,7 +120,6 @@ dependencies = [
  "cortex-m-rt",
  "cortex-m-rtic",
  "embedded-hal",
- "keyberon",
  "panic-halt",
  "shared-types",
  "stm32f1",
@@ -190,13 +189,6 @@ checksum = "824845a0bf897a9042383849b02c1bc219c2383772efcd5c6f9766fa4b81aef3"
 dependencies = [
  "autocfg",
  "hashbrown",
-]
-
-[[package]]
-name = "keyberon"
-version = "0.2.0"
-dependencies = [
- "usb-device",
 ]
 
 [[package]]

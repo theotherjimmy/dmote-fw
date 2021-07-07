@@ -1,8 +1,6 @@
 #![no_std]
 use core::sync::atomic::{AtomicBool, Ordering};
 use cortex_m::singleton;
-use keyberon::layout::{Layout, keycode};
-use keyberon::key_code::KbHidReport;
 use stm32f1::stm32f103;
 use stm32f1xx_hal::gpio::{
     gpioa::{PA0, PA1, PA2, PA3, PA4, PA5},
@@ -15,6 +13,24 @@ use stm32f1xx_hal::time::Hertz;
 use stm32f1xx_hal::{dma, pac};
 
 use shared_types::{DebState, KeyState, PressRelease};
+
+pub mod key_code;
+pub mod keyboard;
+pub mod hid;
+use key_code::{KbHidReport, KeyCode};
+
+pub type Layout<const ROW: usize, const COL: usize> = [[KeyCode; COL]; ROW];
+
+pub fn keycode<const COL: usize, const ROW: usize>(
+    layout: &'static Layout<ROW, COL>,
+    row: usize,
+    col: usize,
+) -> Option<&'static KeyCode> {
+    layout
+        .get(row)
+        .and_then(|l| l.get(col))
+}
+
 
 /// Compute the Auto Reload Register and Prescaller Register values for a timer
 #[inline(always)]
@@ -342,7 +358,7 @@ impl Log {
 
 /// Scan all keys into the triggers and generate a HID report.
 pub fn scan<'a, const R: usize, const C: usize, const T: u8>(
-    layout: &'static Layout<C, R>,
+    layout: &'static Layout<R, C>,
     scanout_half: &'a [u16; C],
     triggers: &'a mut [[QuickDraw<T>; R]; C],
     log: &'a mut Log,
@@ -382,20 +398,6 @@ pub fn scan<'a, const R: usize, const C: usize, const T: u8>(
     }
     report
 }
-
-/// Between the halfs of my keyboard, there is a phone line (RJ9) serial
-/// connection. I tried higher speeds, but they were not as reliable.
-///
-/// This is the baud rate for that Serial.
-/// Use this by called `.bps()` on this value.
-//
-// TODO: Rework this when the following is not an error:
-//  error[E0015]: calls in constants are limited to constant functions,
-//  tuple structs and tuple variants
-//     --> src/lib.rs:319:30
-//      |
-//  319 | const PHONE_LINE_BAUD: Bps = 115_200.bps();
-pub const PHONE_LINE_BAUD: u32 = 115_200;
 
 /// A quick draw style switch Schmitt trigger.
 ///

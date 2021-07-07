@@ -19,10 +19,6 @@ path = "../shared-types/"
 git = "https://github.com/burrbull/cortex-m-rtic"
 branch = "const"
 
-[dependencies.keyberon]
-version = "0.2.0"
-path = "keyberon"
-
 [dependencies.stm32f1xx-hal]
 version = "0.7.0"
 default-features = false
