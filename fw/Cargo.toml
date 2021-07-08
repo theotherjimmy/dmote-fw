@@ -15,10 +15,6 @@ panic-halt = "0.2"
 version = "0.1.0"
 path = "../shared-types/"
 
-[dependencies.cortex-m-rtic]
-git = "https://github.com/burrbull/cortex-m-rtic"
-branch = "const"
-
 [dependencies.stm32f1xx-hal]
 version = "0.7.0"
 default-features = false

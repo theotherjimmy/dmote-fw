@@ -308,3 +308,13 @@ impl KbHidReport {
         }
     }
 }
+
+pub type Layout<const ROW: usize, const COL: usize> = [[KeyCode; COL]; ROW];
+
+pub fn keycode<const COL: usize, const ROW: usize>(
+    layout: &'static Layout<ROW, COL>,
+    row: usize,
+    col: usize,
+) -> Option<&'static KeyCode> {
+    layout.get(row).and_then(|l| l.get(col))
+}
