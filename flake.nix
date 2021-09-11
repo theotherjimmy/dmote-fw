@@ -24,6 +24,7 @@
             cargo-bloat
             cargo-binutils
             gdb-multitarget
+            openocd
           ];
         };
       });
