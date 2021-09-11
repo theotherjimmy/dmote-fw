@@ -29,12 +29,12 @@ fn compute_arr_presc(freq: u32, clock: u32) -> (u16, u16) {
 ///
 /// Pin | Left Half wiring                  | Right half wiring
 /// ----|-----------------------------------|---------------------------------
-/// PA3 | Pinky col - 1                     | Pointer col + 1 & Thumb col +1
-/// PA4 | Pinky home col                    | Ponter Home col & Thumb Home col
-/// PA5 | Ring home col                     | Middle Home col & Thumb col -1
-/// PA6 | Middle Home col & Thumb col -1    | Ring Home col
-/// PA7 | Pointer Home col & Thumb Home col | Pinky Home col
-/// PA8 | Pointer col + 1 & Thumb col + 1   | Pinky col - 1
+/// PA0 | Pinky col - 1                     | Pointer col + 1 & Thumb col +1
+/// PA1 | Pinky home col                    | Ponter Home col & Thumb Home col
+/// PA2 | Ring home col                     | Middle Home col & Thumb col -1
+/// PA3 | Middle Home col & Thumb col -1    | Ring Home col
+/// PA4 | Pointer Home col & Thumb Home col | Pinky Home col
+/// PA5 | Pointer col + 1 & Thumb col + 1   | Pinky col - 1
 pub struct Cols(
     pub PA0<Output<PushPull>>,
     pub PA1<Output<PushPull>>,
@@ -150,12 +150,12 @@ pub fn dma_key_scan(
     // to write to bits that are not part of those that are part of the matrix
     #[rustfmt::skip]
     const SCANIN: [u32; 6] = [
-        (0b111110000 << 16) | 0b000001000,
-        (0b111101000 << 16) | 0b000010000,
-        (0b111011000 << 16) | 0b000100000,
-        (0b110111000 << 16) | 0b001000000,
-        (0b101111000 << 16) | 0b010000000,
-        (0b011111000 << 16) | 0b100000000,
+        (0b111110 << 16) | 0b000001,
+        (0b111101 << 16) | 0b000010,
+        (0b111011 << 16) | 0b000100,
+        (0b110111 << 16) | 0b001000,
+        (0b101111 << 16) | 0b010000,
+        (0b011111 << 16) | 0b100000,
     ];
     let mut dma = dma.split(ahb);
     let scanout = singleton!(: [[u16; 6]; 2] = [[0; 6]; 2]).unwrap();
@@ -352,7 +352,7 @@ pub fn scan<'a, const R: usize, const C: usize, const T: u8>(
     let mut report = KbHidReport::default();
     for (col, (row_val, trigger_row)) in scanout_half.iter().zip(&mut triggers[..]).enumerate() {
         for row in 0..R {
-            let press = (row_val & (1 << row)) != 0;
+            let press = (row_val & (1 << (row + 3))) != 0;
             let old: QuickDraw<T> = trigger_row[row].clone();
             let is_old_pressed = old.is_pressed();
             trigger_row[row].step(press, timestamp as u8);
