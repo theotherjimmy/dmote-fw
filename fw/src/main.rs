@@ -23,7 +23,7 @@ use scan::{dma_key_scan, scan, Cols, Log, Matrix, Rows};
 use trigger::QuickDraw;
 
 /// A handly shortcut for the keyberon USB class type.
-pub type UsbClass = hid::HidClass<'static, UsbBusType, keyboard::Keyboard<()>>;
+pub type UsbClass = hid::HidClass<'static, UsbBusType, keyboard::Keyboard>;
 
 const VID: u16 = 0x1209;
 
@@ -31,7 +31,7 @@ const PID: u16 = 0x345c;
 
 /// Constructor for `Class`.
 pub fn new_class(bus: &'static UsbBusAllocator<UsbBusType>) -> UsbClass {
-    hid::HidClass::new(keyboard::Keyboard::new(()), bus)
+    hid::HidClass::new(keyboard::Keyboard::default(), bus)
 }
 
 /// Constructor for a USB keyboard device.
