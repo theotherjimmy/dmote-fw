@@ -10,19 +10,18 @@ _openocd-pipe:
     script target/stm32f1x.cfg
 
 # Debug a the side of the keyboard with gdb
-debug side:
+debug:
     #!/usr/bin/env -S gdb -q -ix
-    file {{build-dir}}/release/{{side}}
-    break src/bin/right.rs:251
-    break src/lib.rs:313
+    file {{build-dir}}/release/dmote-fw
     info breakpoints
     {{connect}}
+    continue
 
 # Flash a the side of the keyboard with gdb
-flash side: build
+flash: build
     #!/usr/bin/env -S gdb -q --batch -x
     set style enable on
-    file {{build-dir}}/release/{{side}}
+    file {{build-dir}}/release/dmote-fw
     {{connect}}
     monitor reset
     load
