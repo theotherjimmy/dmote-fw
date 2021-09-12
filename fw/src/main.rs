@@ -21,7 +21,7 @@ use key_code::{KeyCode::*, Layout};
 use scan::{dma_key_scan, scan, Cols, Log, Matrix, Rows};
 use trigger::QuickDraw;
 
-/// A handly shortcut for the keyberon USB class type.
+/// A handly shortcut for the USB class type.
 pub type UsbClass = hid::HidClass<'static, UsbBusType, keyboard::Keyboard>;
 
 const VID: u16 = 0x1209;

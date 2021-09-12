@@ -23,5 +23,4 @@ stm32f1       | DMA to/from registers needs the `.ptr()` method on registers
 stm32f1xx-hal | Compatibility with vendored stm32f1 dep
 
 I'm likely to un-vendor stm32f1 and stm32f1xx-hal when versions of them
-become available that meet my needs. However, I'll probably not be updating
-keyberon, as I use very little of that library "Quick-Draw" debouncing.
+become available that meet my needs.
