@@ -25,6 +25,8 @@
             cargo-binutils
             gdb-multitarget
             openocd
+            libusb1
+            pkg-config
           ];
         };
       });
