@@ -7,7 +7,6 @@ use stm32f1xx_hal::prelude::*;
 use stm32f1xx_hal::usb::{Peripheral, UsbBus, UsbBusType};
 use stm32f1xx_hal::pac::Peripherals;
 use usb_device::bus::UsbBusAllocator;
-use usb_device::class::UsbClass as _;
 use usb_device::prelude::*;
 use cortex_m_rt::entry;
 use core::default::Default;
@@ -70,14 +69,16 @@ pub static LAYOUT: Layout<13, 6> = [
     [__,     Up,     Down,        LBracket,  Slash,  RShift], /* 12 */
 ];
 
+static mut USB_BUS: Option<UsbBusAllocator<UsbBusType>> = None;
+static mut USB_CLASS: Option<UsbClass> = None;
+
 #[entry]
 fn main() -> ! {
-    static mut USB_BUS: Option<UsbBusAllocator<UsbBusType>> = None;
     let device = unsafe { Peripherals::steal() };
 
     let mut flash = device.FLASH.constrain();
     let mut rcc = device.RCC.constrain();
-    let mut debouncer: [[QuickDraw<30>; 13]; 6] = [[Default::default(); 13]; 6];
+    let mut debouncer: [[QuickDraw<100>; 13]; 6] = [[Default::default(); 13]; 6];
     let scan_freq = 2.khz();
 
     let clocks = rcc
@@ -109,16 +110,23 @@ fn main() -> ! {
         pin_dp: usb_dp.into_floating_input(&mut gpioa.crh),
     };
 
-    *USB_BUS = Some(UsbBus::new(usb));
-    // If we can't do this, we can't be a keyboard, so we _should_ panic if this
-    // fails
-    let usb_bus = match USB_BUS.as_ref() {
-        Some(ub) => ub,
-        None => panic!(),
+    let usb_bus = unsafe {
+        USB_BUS = Some(UsbBus::new(usb));
+        // If we can't do this, we can't be a keyboard, so we _should_ panic if this
+        // fails
+        match USB_BUS.as_ref() {
+            Some(ub) => ub,
+            None => panic!(),
+        }
     };
 
-    let mut usb_class = new_class(usb_bus);
-    let mut usb_dev = new_device(usb_bus);
+    let usb_class = unsafe {
+        USB_CLASS = Some(new_class(usb_bus));
+        match USB_CLASS.as_mut() {
+            Some(uc) => uc,
+            None => panic!(),
+        }
+    };
 
     // NOTE: These have to be setup, though they are dropped, as without this setup
     // code, it's not possible to read the matrix.
@@ -156,19 +164,20 @@ fn main() -> ! {
         &mut rcc.apb2,
         &clocks,
     );
+    let mut usb_dev = new_device(usb_bus);
+    usb_dev.force_reset();
 
     let log = Log::get();
     let mut now: u32 = 0;
     loop {
-        if usb_dev.poll(&mut [&mut usb_class]) {
-            usb_class.poll();
-        }
+        usb_dev.poll(&mut [usb_class]);
         let dma_isr = dma.5.isr();
         if dma_isr.bits() != 0 {
             let half: usize = if dma_isr.htif4().bits() { 0 } else { 1 };
             dma.5.ifcr().write(|w| w.cgif5().clear());
             now = now.wrapping_add(1);
-            usb_class.device_mut().set_keyboard_report(scan(&LAYOUT, &scanout[half], &mut debouncer, log, now));
+            let report = scan(&LAYOUT, &scanout[half], &mut debouncer, log, now);
+            usb_class.write(report.as_bytes());
         }
     }
 }
