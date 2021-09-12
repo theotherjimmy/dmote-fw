@@ -42,6 +42,7 @@ pub fn new_device(
         .manufacturer("Me")
         .product("Dactyl Manuform: OTE")
         .serial_number(env!("CARGO_PKG_VERSION"))
+        .device_class(hid::INTERFACE_CLASS_HID)
         .build()
 }
 

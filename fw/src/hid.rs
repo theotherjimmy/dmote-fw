@@ -11,8 +11,8 @@ use usb_device::descriptor::DescriptorWriter;
 use usb_device::endpoint::{EndpointAddress, EndpointIn};
 use usb_device::UsbError;
 
-const SPECIFICATION_RELEASE: u16 = 0x111;
-const INTERFACE_CLASS_HID: u8 = 0x03;
+pub const SPECIFICATION_RELEASE: u16 = 0x111;
+pub const INTERFACE_CLASS_HID: u8 = 0x03;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(u8)]
@@ -133,16 +133,6 @@ impl<B: UsbBus, D: HidDevice> HidClass<'_, B, D> {
         }
     }
 
-    fn get_report(&mut self, xfer: ControlIn<B>) {
-        let req = xfer.request();
-        let [report_type, report_id] = req.value.to_be_bytes();
-        let report_type = ReportType::from(report_type);
-        match self.device.get_report(report_type, report_id) {
-            Ok(data) => xfer.accept_with(data).ok(),
-            Err(()) => xfer.reject().ok(),
-        };
-    }
-
     fn set_report(&mut self, xfer: ControlOut<B>) {
         let req = xfer.request();
         let [report_type, report_id] = req.value.to_be_bytes();
@@ -226,13 +216,6 @@ impl<B: UsbBus, D: HidDevice> UsbClass<B> for HidClass<'_, B, D> {
                     {
                         let descriptor = self.device.report_descriptor();
                         xfer.accept_with(descriptor).ok();
-                    }
-                }
-            }
-            (RequestType::Class, Recipient::Interface) => {
-                if let Some(request) = Request::new(req.request) {
-                    if request == Request::GetReport && req.index == self.interface_index() {
-                        self.get_report(xfer);
                     }
                 }
             }
