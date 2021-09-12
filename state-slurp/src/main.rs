@@ -77,7 +77,7 @@ fn main() {
     let before = Instant::now();
     core.read_32(body as u32, &mut buf).unwrap();
     let duration = before.elapsed();
-    let start_time = (event_at(&buf, head_val as usize).timestamp as u64) * (1_000_000_000 / 5_000);
+    let start_time = (event_at(&buf, head_val as usize).timestamp as u64) * (1_000_000_000 / 2_000);
     println!(r#"{{
         "title": "keyboard debouncing",
         "start": [0, {}],
@@ -94,7 +94,7 @@ fn main() {
     }}"#, start_time);
     for i in (head_val..size).chain(0..head_val) {
         let event = event_at(&buf, i as usize);
-        let ns_time = ((event.timestamp as u64) * (1_000_000_000 / 5_000)) - start_time;
+        let ns_time = ((event.timestamp as u64) * (1_000_000_000 / 2_000)) - start_time;
         println!(r#"{{
             "entity": "{}-{}-debouncer",
             "time": "{}",
