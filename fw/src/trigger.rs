@@ -12,11 +12,18 @@ use shared_types::DebState;
 ///                       | debounce |
 ///                       |  period  |
 ///                       |  5-10ms  |
+///            ___________
+/// Signal  ...           \______/\/\__________________
+///            ___________|__________
+/// Trigger ...                      \_________________
+///                       | debounce |
+///                       |  period  |
+///                       |  5-10ms  |
 /// ```
 ///
 /// Notice that this introduces a latency that corresponds to the period used
 /// as an implementation detail of the trigger logic, typically in the range
-/// of 5 to 10 milliseconds.
+/// of 5 to 10 milliseconds, both during the key press and release.
 ///
 /// Idealy, We would want a Schmitt trigger that looked something like:
 /// ```text
@@ -24,17 +31,25 @@ use shared_types::DebState;
 /// Signal  ______________/  \/\/\/
 ///                        ___________________________________
 /// Trigger ______________/
+///
+///            ___________
+/// Signal  ...           \______/\/\__________________
+///            ___________|__________
+/// Trigger ...                      \_________________
+///                       | debounce |
+///                       |  period  |
+///                       |  5-10ms  |
 /// ```
 ///
 /// That is, a Schmitt trigger with no delay between the start of the key press
 /// and the resulting noiseless "triger" signal.
 ///
-/// This debouncer is designed for minimum latency, and not much else.
+/// This debouncer is designed for minimum latency on key press, and not much else.
 ///
-/// The idea is that we say that a change is reported _before_ debouncing.
-/// That means that we send a press/release event the moment it changes state,
-/// and afterwards we ensure that we don't send any of the bounces until we're
-/// confident that the key has stabilized.
+/// The idea is that we report a key press _before_ debouncing. That means that we
+/// send a press event the moment it changes state, and afterwards we ensure that
+/// we don't send any of the bounces until we're confident that the
+/// key has stabilized.
 ///
 /// So, something like the following state diagram:
 ///
@@ -46,12 +61,12 @@ use shared_types::DebState;
 ///  U - an up or released key from a scan or as an event
 ///  S - stable timeout has been reached
 ///
-/// ┌───────────S[D]─┬─D─{Bouncing_D_D[U]}
+/// ┌───────────S────┬─D─{Bouncing_D_D[D]}
 /// │               !S     ^   │
 /// │                └─────┤   U
 /// ├─────────────┐        D   │
 /// v             D        │   v
-/// {Stable_D[D]}─┴─U─┬─>{Bouncing_D_U[U]}
+/// {Stable_D[D]}─┴─U─┬─>{Bouncing_D_U[D]}
 /// ^                 │        │
 /// │                 │        U
 /// S                 └─────!S─┤
@@ -73,17 +88,18 @@ use shared_types::DebState;
 ///  text on arrows is input
 ///  [] surround output events
 ///  {} surround states
+///  D - a down or pressed key from a scan or as an event
 ///  N - A key press or release
 ///  !N - The other kind of key press or release
 ///  S - stable timeout has been reached
 ///  N=!N - swap the press/release state
 ///
-/// ┌───────────S─┬──N───{Bouncing_N_N[!N]}
+/// ┌───────────S─┬──N───{Bouncing_N_N[D]}
 /// │            !S        ^   │
 /// │             └────────┤  !N
 /// ├─────────────┐        N   │
 /// v             N        │   v
-/// {Stable_N[N]}─┴─!N─┬─>{Bouncing_N_!N[!N]}
+/// {Stable_N[N]}─┴─!N─┬─>{Bouncing_N_!N[D]}
 /// ^                  !S    │
 /// └───────S,N=!N─────┴─!N──┘
 /// ```
@@ -99,17 +115,18 @@ use shared_types::DebState;
 ///  [] surround output events
 ///  {} surround states
 ///  (..) Argument(s) to a state
+///  D - a down or pressed key from a scan or as an event
 ///  N - A key press or release
 ///  !N - The other kind of key press or release
 ///  S - stable timeout has been reached
 ///  N=!N - swap the press/release state
 ///
-/// ┌───────────S─┬──N───{Bouncing(N,N)*[!N]}
+/// ┌───────────S─┬──N───{Bouncing(N,N)*[D]}
 /// │            !S        ^   │
 /// │             └────────┤  !N
 /// ├──────────────┐       N   │
 /// v              N       │   v
-/// {Stable(N)[N]}─┴─!N─┬─>{Bouncing(N,!N)*[!N]}
+/// {Stable(N)[N]}─┴─!N─┬─>{Bouncing(N,!N)*[D]}
 /// ^                   !S   │
 /// └───────S,N=!N───────┴!N─┘
 /// ```
@@ -177,8 +194,8 @@ impl<const T: u8> QuickDraw<T> {
     /// Is this state associated with a pressed key?
     pub fn is_pressed(&self) -> bool {
         match self {
-            QuickDraw::Stable(pressed) => *pressed,
-            QuickDraw::Bouncing { prior, .. } => !prior,
+            QuickDraw::Stable(false) => false,
+            _ => true,
         }
     }
 
