@@ -49,24 +49,24 @@ pub fn new_device(
 #[rustfmt::skip]
 pub static LAYOUT: Layout<13, 6> = [
     /*                 Port B                          */
-    /* 3     4       5            6          7       8 */
+    /* 0     1       2            3          4       5 */
     /* -------------- Left Fingers -------------------       Port A*/
-    [__,     __,     Kb2,         Kb3,       Kb4,    Kb5   ], /* 0 */
-    [Equal,  Kb1,    W,           E,         R,      T     ], /* 1 */
-    [Tab,    Q,      S,           D,         F,      G     ], /* 2 */
-    [Escape, A,      X,           C,         V,      B     ], /* 3 */
-    [LShift, Z,      NonUsBslash, Left,      Right,  __    ], /* 4 */
+    [__,     __,     Kb2,         Kb3,       Kb4,    Kb5   ], /* 3 */
+    [Equal,  Kb1,    W,           E,         R,      T     ], /* 4 */
+    [Tab,    Q,      S,           D,         F,      G     ], /* 5 */
+    [Escape, A,      X,           C,         V,      B     ], /* 6 */
+    [LShift, Z,      NonUsBslash, Left,      Right,  __    ], /* 7 */
     /* ------------------- Thumbs -------------------- */
     /* --- Right  ------------|---------- Left ------- */
-    [RCtrl,  BSpace, RBracket,    Grave,     LShift, LCtrl ], /* 5 */
-    [RAlt,   Enter,  Escape,      Escape,    Space,  LAlt  ], /* 6 */
-    [PgUp,   PgDown, PScreen,     Pause,     End,    Home  ], /* 7 */
+    [RCtrl,  BSpace, RBracket,    Grave,     LShift, LCtrl ], /* 8 */
+    [RAlt,   Enter,  Escape,      Escape,    Space,  LAlt  ], /* 9 */
+    [PgUp,   PgDown, PScreen,     Pause,     End,    Home  ], /* 10 */
     /* ------------- Right Fingers ----------------- */
-    [Kb6,    Kb7,    Kb8,         Kb9,       __,     __    ], /* 8 */
-    [Y,      U,      I,           O,         Kb0,    Minus ], /* 9 */
-    [H,      J,      K,           L,         P,      Bslash], /* 10 */
-    [N,      M,      Comma,       Dot,       SColon, Quote ], /* 11 */
-    [__,     Up,     Down,        LBracket,  Slash,  RShift], /* 12 */
+    [Kb6,    Kb7,    Kb8,         Kb9,       __,     __    ], /* 11 */
+    [Y,      U,      I,           O,         Kb0,    Minus ], /* 12 */
+    [H,      J,      K,           L,         P,      Bslash], /* 13 */
+    [N,      M,      Comma,       Dot,       SColon, Quote ], /* 14 */
+    [__,     Up,     Down,        LBracket,  Slash,  RShift], /* 15 */
 ];
 
 static mut USB_BUS: Option<UsbBusAllocator<UsbBusType>> = None;
