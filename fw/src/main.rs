@@ -79,7 +79,7 @@ pub static LAYOUT: Layout<13, 6> = [
     [Tab,    Q,      W,           E,        R,        T     ], /* 4 */
     [Escape, A,      S,           D,        F,        G     ], /* 5 */
     [LShift, Z,      X,           C,        V,        B     ], /* 6 */
-    [__,     Grave,  NonUsBslash, Left,     Right,    __    ], /* 7 */
+    [Delete, Grave,  NonUsBslash, Left,     Right,    __    ], /* 7 */
     /*
      *                        Left thumb pad
      *                            +---+---+
