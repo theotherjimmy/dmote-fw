@@ -18,7 +18,7 @@ debug:
     continue
 
 # Flash a the side of the keyboard with gdb
-flash: build
+flash layout: (build layout)
     #!/usr/bin/env -S gdb -q --batch -x
     set style enable on
     file {{build-dir}}/release/dmote-fw
@@ -28,5 +28,5 @@ flash: build
     monitor reset run
 
 # Build firmware for both the left and right side of the keyboard
-build:
-    cargo build --release
+build layout:
+    cargo build --release --features {{layout}}

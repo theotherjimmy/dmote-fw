@@ -11,6 +11,7 @@ cortex-m-rt = "0.6.13"
 usb-device = "0.2.8"
 panic-halt = "0.2"
 
+
 [dependencies.shared-types]
 version = "0.1.0"
 path = "../shared-types/"
@@ -25,6 +26,10 @@ path = "stm32f1xx-hal"
 version = "0.13.0"
 features = ["stm32f103"]
 path = "stm32f1"
+
+[features]
+dmote = []
+dactyl = []
 
 [profile.dev]
 panic = "abort"

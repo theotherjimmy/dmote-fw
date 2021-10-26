@@ -47,26 +47,69 @@ pub fn new_device(
 
 /// Mapping from switch positions to keys symbols; 'a', '1', '$', etc.
 #[rustfmt::skip]
+#[cfg(feature = "dmote")]
+ pub static LAYOUT: Layout<13, 6> = [
+     /*                 Port A                          */
+     /* 0     1       2            3          4       5 */
+     /* -------------- Left Fingers -------------------      Port B */
+     [__,     __,     Kb2,         Kb3,       Kb4,    Kb5   ], /* 3 */
+     [Equal,  Kb1,    W,           E,         R,      T     ], /* 4 */
+     [Tab,    Q,      S,           D,         F,      G     ], /* 5 */
+     [Escape, A,      X,           C,         V,      B     ], /* 6 */
+     [LShift, Z,      NonUsBslash, Left,      Right,  __    ], /* 7 */
+     /* ------------------- Thumbs -------------------- */
+     /* --- Right  ------------|---------- Left ------- */
+     [RCtrl,  BSpace, RBracket,    Grave,     LShift, LCtrl ], /* 8 */
+     [RAlt,   Enter,  Escape,      Escape,    Space,  LAlt  ], /* 9 */
+     [PgUp,   PgDown, PScreen,     Pause,     End,    Home  ], /* 10 */
+     /* ------------- Right Fingers ----------------- */
+     [Kb6,    Kb7,    Kb8,         Kb9,       __,     __    ], /* 11 */
+     [Y,      U,      I,           O,         Kb0,    Minus ], /* 12 */
+     [H,      J,      K,           L,         P,      Bslash], /* 13 */
+     [N,      M,      Comma,       Dot,       SColon, Quote ], /* 14 */
+     [__,     Up,     Down,        LBracket,  Slash,  RShift], /* 15 */
+];
+#[rustfmt::skip]
+#[cfg(feature = "dactyl")]
 pub static LAYOUT: Layout<13, 6> = [
-    /*                 Port B                          */
-    /* 0     1       2            3          4       5 */
-    /* -------------- Left Fingers -------------------       Port A*/
-    [__,     __,     Kb2,         Kb3,       Kb4,    Kb5   ], /* 3 */
-    [Equal,  Kb1,    W,           E,         R,      T     ], /* 4 */
-    [Tab,    Q,      S,           D,         F,      G     ], /* 5 */
-    [Escape, A,      X,           C,         V,      B     ], /* 6 */
-    [LShift, Z,      NonUsBslash, Left,      Right,  __    ], /* 7 */
-    /* ------------------- Thumbs -------------------- */
-    /* --- Right  ------------|---------- Left ------- */
-    [RCtrl,  BSpace, RBracket,    Grave,     LShift, LCtrl ], /* 8 */
-    [RAlt,   Enter,  Escape,      Escape,    Space,  LAlt  ], /* 9 */
-    [PgUp,   PgDown, PScreen,     Pause,     End,    Home  ], /* 10 */
-    /* ------------- Right Fingers ----------------- */
-    [Kb6,    Kb7,    Kb8,         Kb9,       __,     __    ], /* 11 */
-    [Y,      U,      I,           O,         Kb0,    Minus ], /* 12 */
-    [H,      J,      K,           L,         P,      Bslash], /* 13 */
-    [N,      M,      Comma,       Dot,       SColon, Quote ], /* 14 */
-    [__,     Up,     Down,        LBracket,  Slash,  RShift], /* 15 */
+    /*                 Port A                            */
+    /* 0     1       2            3          4         5 */
+    /* -------------- Left Fingers ------------------------- Port B */
+    [Equal,  Kb1,    Kb2,         Kb3,      Kb4,      Kb5   ], /* 3 */
+    [Tab,    Q,      W,           E,        R,        T     ], /* 4 */
+    [Escape, A,      S,           D,        F,        G     ], /* 5 */
+    [LShift, Z,      X,           C,        V,        B     ], /* 6 */
+    [__,     Grave,  NonUsBslash, Left,     Right,    __    ], /* 7 */
+    /*
+     *                        Left thumb pad
+     *                            +---+---+
+     *                            | 5 | 4 |
+     *                        +---+---+---+
+     *                        |   |   | 3 |
+     *                        | 1 | 0 +---+
+     *                        |   |   | 2 |
+     *                        +---+---+---+
+     */
+    [LShift, BSpace, End,         Home,     LAlt,     LCtrl ], /* 8 */
+    /* PB9 is not wired to anything on the Dactyl */
+    [__,     __,     __,          __,       __,       __    ], /* 9 */
+    /* ------------- Right Fingers --------------------------         */
+    [Kb6,    Kb7,    Kb8,         Kb9,      Kb0,      Minus ], /* 10 */
+    [Y,      U,      I,           O,        P,        Bslash], /* 11 */
+    [H,      J,      K,           L,        SColon,   Quote ], /* 12 */
+    [N,      M,      Comma,       Dot,      Slash,    RShift], /* 13 */
+    [__,     Up,     Down,        LBracket, RBracket, __    ], /* 14 */
+    /*
+     *                        Right thumb pad
+     *                        +-------+
+     *                        | 1 | 0 |
+     *                        +---+---+---+
+     *                        | 2 |   |   |
+     *                        +---+ 4 | 5 |
+     *                        | 3 |   |   |
+     *                        +---+---+---+
+     */
+    [RCtrl,  RGui,   PgUp,        PgDown,   Enter,    Space], /* 15 */
 ];
 
 static mut USB_BUS: Option<UsbBusAllocator<UsbBusType>> = None;
