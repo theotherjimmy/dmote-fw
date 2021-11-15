@@ -58,10 +58,20 @@ pub fn new_device(
      [Escape, A,      X,           C,         V,      B     ], /* 6 */
      [LShift, Z,      NonUsBslash, Left,      Right,  __    ], /* 7 */
      /* ------------------- Thumbs -------------------- */
+     /*  Thumb Cluster  Last Middle key  Thumb Cluster
+      *      +---+       +---+   +---+       +---+
+      *  +---+9,0+---+   |8,2|   |8,3|   +---+9,5+---+
+      *  |a,0+---+8,0|   +---+   +---+   |a,5+---+8,5|
+      *  +---+9,1+---+                   +---+9,4+---+
+      *  |a,1+---+8,1|     Face keys     |a,4+---+a,4|
+      *  +---+9,2+---+   +---+   +---+   +---+9,3+---+
+      *      +---+       |a,2|   |a,3|       +---+
+      *                  +---+   +---+
+      */
      /* --- Right  ------------|---------- Left ------- */
      [RCtrl,  BSpace, RBracket,    Grave,     LShift, LCtrl ], /* 8 */
      [RAlt,   Enter,  Escape,      Escape,    Space,  LAlt  ], /* 9 */
-     [PgUp,   PgDown, F12,         Pause,     End,    Home  ], /* 10 */
+     [PgUp,   PgDown, F12,         Pause,     End,    Home  ], /* 10(a) */
      /* ------------- Right Fingers ----------------- */
      [Kb6,    Kb7,    Kb8,         Kb9,       __,     __    ], /* 11 */
      [Y,      U,      I,           O,         Kb0,    Minus ], /* 12 */
