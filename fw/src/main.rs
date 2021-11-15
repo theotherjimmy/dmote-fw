@@ -61,7 +61,7 @@ pub fn new_device(
      /* --- Right  ------------|---------- Left ------- */
      [RCtrl,  BSpace, RBracket,    Grave,     LShift, LCtrl ], /* 8 */
      [RAlt,   Enter,  Escape,      Escape,    Space,  LAlt  ], /* 9 */
-     [PgUp,   PgDown, PScreen,     Pause,     End,    Home  ], /* 10 */
+     [PgUp,   PgDown, F12,         Pause,     End,    Home  ], /* 10 */
      /* ------------- Right Fingers ----------------- */
      [Kb6,    Kb7,    Kb8,         Kb9,       __,     __    ], /* 11 */
      [Y,      U,      I,           O,         Kb0,    Minus ], /* 12 */
@@ -98,7 +98,7 @@ pub static LAYOUT: Layout<13, 6> = [
     [Y,      U,      I,           O,        P,        Bslash], /* 11 */
     [H,      J,      K,           L,        SColon,   Quote ], /* 12 */
     [N,      M,      Comma,       Dot,      Slash,    RShift], /* 13 */
-    [__,     Up,     Down,        LBracket, RBracket, __    ], /* 14 */
+    [__,     Up,     Down,        LBracket, RBracket, F12   ], /* 14 */
     /*
      *                        Right thumb pad
      *                        +-------+
