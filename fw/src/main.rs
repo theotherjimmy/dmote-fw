@@ -18,7 +18,7 @@ mod scan;
 mod trigger;
 
 use key_code::{KeyCode::*, Layout};
-use scan::{dma_key_scan, scan, Cols, Log, Matrix, Rows};
+use scan::{dma_key_scan, scan, report, Cols, Log, Matrix, Rows};
 use trigger::QuickDraw;
 
 /// A handly shortcut for the USB class type.
@@ -52,11 +52,11 @@ pub fn new_device(
      /*                 Port A                          */
      /* 0     1       2            3          4       5 */
      /* -------------- Left Fingers -------------------      Port B */
-     [__,     __,     Kb2,         Kb3,       Kb4,    Kb5   ], /* 3 */
-     [Equal,  Kb1,    W,           E,         R,      T     ], /* 4 */
-     [Tab,    Q,      S,           D,         F,      G     ], /* 5 */
-     [Escape, A,      X,           C,         V,      B     ], /* 6 */
-     [LShift, Z,      NonUsBslash, Left,      Right,  __    ], /* 7 */
+     [__,     __,     __,          __,        __,     __    ], /* 3 */
+     [__,     __,     W,           E,         R,      T     ], /* 4 */
+     [__,     Q,      S,           D,         F,      G     ], /* 5 */
+     [__,     A,      X,           C,         V,      B     ], /* 6 */
+     [__,     Z,      NonUsBslash, Left,      Right,  __    ], /* 7 */
      /* ------------------- Thumbs -------------------- */
      /*  Thumb Cluster  Last Middle key  Thumb Cluster
       *      +---+       +---+   +---+       +---+
@@ -70,13 +70,46 @@ pub fn new_device(
       */
      /* --- Right  ------------|---------- Left ------- */
      [RCtrl,  BSpace, RBracket,    Grave,     LShift, LCtrl ], /* 8 */
-     [RAlt,   Enter,  Escape,      Escape,    Space,  LAlt  ], /* 9 */
+     [__,     Enter,  Tab,         Escape,    Space,  LAlt  ], /* 9 */
      [PgUp,   PgDown, F12,         Pause,     End,    Home  ], /* 10(a) */
      /* ------------- Right Fingers ----------------- */
-     [Kb6,    Kb7,    Kb8,         Kb9,       __,     __    ], /* 11 */
-     [Y,      U,      I,           O,         Kb0,    Minus ], /* 12 */
+     [__,     __,     __,          __,        __,     __    ], /* 11 */
+     [Y,      U,      I,           O,         __,     __    ], /* 12 */
      [H,      J,      K,           L,         P,      Bslash], /* 13 */
      [N,      M,      Comma,       Dot,       SColon, Quote ], /* 14 */
+     [__,     Up,     Down,        LBracket,  Slash,  RShift], /* 15 */
+];
+#[rustfmt::skip]
+#[cfg(feature = "dmote")]
+ pub static LAYOUT_ALT: Layout<13, 6> = [
+     /*                 Port A                          */
+     /* 0     1       2            3          4       5 */
+     /* -------------- Left Fingers -------------------      Port B */
+     [__,     __,     __,          __,        __,     __   ], /* 3 */
+     [__,     __,     F3,          F4,        F5,     F6    ], /* 4 */
+     [F1,     F2,     Kb2,         Kb3,       Kb4,    Kb5   ], /* 5 */
+     [Equal,  Kb1,    X,           C,         V,      B     ], /* 6 */
+     [__,     Z,      NonUsBslash, Left,      Right,  __    ], /* 7 */
+     /* ------------------- Thumbs -------------------- */
+     /*  Thumb Cluster  Last Middle key  Thumb Cluster
+      *      +---+       +---+   +---+       +---+
+      *  +---+9,0+---+   |8,2|   |8,3|   +---+9,5+---+
+      *  |a,0+---+8,0|   +---+   +---+   |a,5+---+8,5|
+      *  +---+9,1+---+                   +---+9,4+---+
+      *  |a,1+---+8,1|     Face keys     |a,4+---+a,4|
+      *  +---+9,2+---+   +---+   +---+   +---+9,3+---+
+      *      +---+       |a,2|   |a,3|       +---+
+      *                  +---+   +---+
+      */
+     /* --- Right  ------------|---------- Left ------- */
+     [RCtrl,  BSpace, RBracket,    Grave,     LShift, LCtrl ], /* 8 */
+     [__,     Enter,  Tab,         Escape,    Space,  LAlt  ], /* 9 */
+     [PgUp,   PgDown, F12,         Pause,     End,    Home  ], /* 10(a) */
+     /* ------------- Right Fingers ----------------- */
+     [__,     __,     __,          __,        __,     __    ], /* 11 */
+     [F7,     F8,     F9,          F10,       __,    __    ], /* 12 */
+     [Kb6,    Kb7,    Kb8,         Kb9,       F11,    F12   ], /* 13 */
+     [N,      M,      Comma,       Dot,       Kb0,    Minus ], /* 14 */
      [__,     Up,     Down,        LBracket,  Slash,  RShift], /* 15 */
 ];
 #[rustfmt::skip]
@@ -218,7 +251,7 @@ fn main() -> ! {
         &clocks,
     );
     let mut usb_dev = new_device(usb_bus);
-    usb_dev.force_reset();
+    let _ = usb_dev.force_reset();
 
     let log = Log::get();
     let mut now: u32 = 0;
@@ -229,8 +262,17 @@ fn main() -> ! {
             let half: usize = if dma_isr.htif4().bits() { 0 } else { 1 };
             dma.5.ifcr().write(|w| w.cgif5().clear());
             now = now.wrapping_add(1);
-            let report = scan(&LAYOUT, &scanout[half], &mut debouncer, log, now);
-            usb_class.write(report.as_bytes());
+            let token = scan(&scanout[half], &mut debouncer, log, now);
+            #[cfg(feature = "dmote")]
+            let layout = if debouncer[0][6].is_pressed() {
+                &LAYOUT_ALT
+            } else {
+                &LAYOUT
+            };
+            #[cfg(feature = "dactyl")]
+            let layout = &LAYOUT;
+            let rep = report(layout, &debouncer, token);
+            let _ = usb_class.write(rep.as_bytes());
         }
     }
 }

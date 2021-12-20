@@ -341,15 +341,18 @@ impl Log {
     }
 }
 
+/// Zero sized type that binds a scan to reporting. This requires you to do a
+/// build a report with that data. My hope is that this will help prevent a
+/// user from forgetting to scan first.
+pub struct ReportToken();
+
 /// Scan all keys into the triggers and generate a HID report.
 pub fn scan<'a, const R: usize, const C: usize, const T: u8>(
-    layout: &'static Layout<R, C>,
     scanout_half: &'a [u16; C],
     triggers: &'a mut [[QuickDraw<T>; R]; C],
     log: &'a mut Log,
     timestamp: u32,
-) -> KbHidReport {
-    let mut report = KbHidReport::default();
+) -> ReportToken {
     for (col, (row_val, trigger_row)) in scanout_half.iter().zip(&mut triggers[..]).enumerate() {
         for row in 0..R {
             let press = (row_val & (1 << (row + 3))) != 0;
@@ -374,12 +377,26 @@ pub fn scan<'a, const R: usize, const C: usize, const T: u8>(
                     event,
                 });
             }
-            if is_new_pressed {
+        }
+    }
+    ReportToken()
+}
+
+pub fn report<'a, const R: usize, const C: usize, const T: u8>(
+    layout: &'static Layout<R, C>,
+    triggers: &'a [[QuickDraw<T>; R]; C],
+    #[allow(unused_variables)]
+    token: ReportToken,
+) -> KbHidReport {
+    let mut rep = KbHidReport::default();
+    for (col, trigger_row) in triggers.iter().enumerate() {
+        for row in 0..R {
+            if trigger_row[row].is_pressed() {
                 if let Some(&kc) = keycode(layout, row, col) {
-                    report.pressed(kc);
+                    rep.pressed(kc);
                 }
             }
         }
     }
-    report
+    rep
 }
