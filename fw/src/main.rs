@@ -69,8 +69,8 @@ pub fn new_device(
       *                  +---+   +---+
       */
      /* --- Right  ------------|---------- Left ------- */
-     [RCtrl,  BSpace, RBracket,    Grave,     LShift, LCtrl ], /* 8 */
-     [__,     Enter,  Tab,         Escape,    Space,  LAlt  ], /* 9 */
+     [__,     BSpace, RBracket,    Grave,     LShift, LCtrl ], /* 8 */
+     [RAlt,   Enter,  Tab,         Escape,    Space,  LAlt  ], /* 9 */
      [PgUp,   PgDown, F12,         Pause,     End,    Home  ], /* 10(a) */
      /* ------------- Right Fingers ----------------- */
      [__,     __,     __,          __,        __,     __    ], /* 11 */
@@ -264,7 +264,7 @@ fn main() -> ! {
             now = now.wrapping_add(1);
             let token = scan(&scanout[half], &mut debouncer, log, now);
             #[cfg(feature = "dmote")]
-            let layout = if debouncer[0][6].is_pressed() {
+            let layout = if debouncer[0][5].is_pressed() {
                 &LAYOUT_ALT
             } else {
                 &LAYOUT
