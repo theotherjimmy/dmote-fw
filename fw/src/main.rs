@@ -71,7 +71,7 @@ pub fn new_device(
      /* --- Right  ------------|---------- Left ------- */
      [__,     BSpace, RBracket,    Grave,     LShift, LCtrl ], /* 8 */
      [RAlt,   Enter,  Tab,         Escape,    Space,  LAlt  ], /* 9 */
-     [PgUp,   PgDown, F12,         Pause,     End,    Home  ], /* 10(a) */
+     [Kb3,    Kb4,    F12,         Pause,     Kb8,    Kb5   ], /* 10(a) */
      /* ------------- Right Fingers ----------------- */
      [__,     __,     __,          __,        __,     __    ], /* 11 */
      [Y,      U,      I,           O,         __,     __    ], /* 12 */
@@ -89,7 +89,7 @@ pub fn new_device(
      [__,     __,     F3,          F4,        F5,     F6    ], /* 4 */
      [F1,     F2,     Kb2,         Kb3,       Kb4,    Kb5   ], /* 5 */
      [Equal,  Kb1,    X,           C,         V,      B     ], /* 6 */
-     [__,     Z,      NonUsBslash, Left,      Right,  __    ], /* 7 */
+     [__,     Z,      NonUsBslash, Home,      End,    __    ], /* 7 */
      /* ------------------- Thumbs -------------------- */
      /*  Thumb Cluster  Last Middle key  Thumb Cluster
       *      +---+       +---+   +---+       +---+
@@ -110,7 +110,7 @@ pub fn new_device(
      [F7,     F8,     F9,          F10,       __,    __     ], /* 12 */
      [Kb6,    Kb7,    Kb8,         Kb9,       F11,    F12   ], /* 13 */
      [N,      M,      Comma,       Dot,       Kb0,    Minus ], /* 14 */
-     [__,     Up,     Down,        LBracket,  Slash,  RShift], /* 15 */
+     [__,     PgUp,   PgDown,      LBracket,  Slash,  RShift], /* 15 */
 ];
 #[rustfmt::skip]
 #[cfg(feature = "dactyl")]
